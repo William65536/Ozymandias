@@ -6,21 +6,28 @@
 #include <stdbool.h>
 #define _USE_MATH_DEFINES
 #include <math.h>
+#include <string.h>
 
 /* TODO: Maybe use a LISP-like language internally or use a pseudo symbolic algebra range system to replace the current object-oriented system */
 /* TODO: Add parameterized episolids (episterea) */
 
 typedef double Mat4[4][4];
 
-typedef struct AnglePair { double theta, phi; } AnglePair;
+void Mat4_invert(Mat4 self) /* TODO: Handle the case when a matrix is uninvertible */
+{
+    assert(self != NULL);
+    assert(*self != NULL);
+}
+
+// typedef struct AnglePair { double theta, phi; } AnglePair;
 // typedef struct Vec2 { double x, y; } Vec2;
 // typedef struct Dim2 { double width, height; } Dim2;
 typedef struct Vec3 { double x, y, z; } Vec3;
-typedef struct Dim3 { double width, height, depth; } Dim3;
+// typedef struct Dim3 { double width, height, depth; } Dim3;
 // typedef struct Vec4 { double x, y, z, w; } Vec4;
 
 typedef struct Ray {
-    int temp;
+    Vec3 pos, dpos;
 } Ray;
 
 enum Type {
@@ -43,18 +50,6 @@ struct Solid {
     bool (*isintersect)(const Solid *, Ray);
     void (*print)(Solid *); /* For debugging purposes */
 };
-
-Solid *Ellipsoid_new(Vec3 position, AnglePair orientation, Dim3 dimensions)
-{
-    Solid *ret = malloc(sizeof *ret);
-
-    if (ret == NULL)
-        return NULL;
-
-    *ret = (Solid) {};
-
-    return ret;
-}
 
 bool Ellipsoid_isintersect(const Solid *this, Ray ray)
 {
@@ -99,6 +94,44 @@ bool Torus_isintersect(const Solid *this, Ray ray)
     (void) ray;
 
     return false;
+}
+
+Solid *Solid_primitive_new(Mat4 transformation, enum Type type)
+{
+    assert(transformation != NULL);
+    assert(*transformation != NULL);
+
+    Solid *ret = malloc(sizeof *ret);
+
+    if (ret == NULL)
+        return NULL;
+
+    memcpy(ret->scene_transform.to, transformation, sizeof ret->scene_transform.to);
+
+    memcpy(ret->scene_transform.from, ret->scene_transform.to, sizeof ret->scene_transform.from);
+    Mat4_invert(ret->scene_transform.from);
+
+    switch (type) {
+        case TYPE_ELLIPSOID:
+            ret->isintersect = Ellipsoid_isintersect;
+            break;
+        case TYPE_CUBOID:
+            ret->isintersect = Cuboid_isintersect;
+            break;
+        case TYPE_CONE:
+            ret->isintersect = Cone_isintersect;
+            break;
+        case TYPE_CYLINDER:
+            ret->isintersect = Cylinder_isintersect;
+            break;
+        case TYPE_TORUS:
+            ret->isintersect = Torus_isintersect;
+            break;
+        default:
+            assert(0 && "Unreachable");
+    }
+
+    return ret;
 }
 
 bool Union_isintersect(const Solid *this, Ray ray)
