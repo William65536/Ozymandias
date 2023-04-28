@@ -30,17 +30,6 @@ typedef struct Ray {
     Vec3 pos, dpos;
 } Ray;
 
-enum Type {
-    TYPE_ELLIPSOID,
-    TYPE_CUBOID,
-    TYPE_CONE,
-    TYPE_CYLINDER,
-    TYPE_TORUS,
-    TYPE_UNION,
-    TYPE_INTERSECTION,
-    TYPE_DIFFERENCE
-};
-
 typedef struct Solid Solid;
 struct Solid {
     union {
@@ -50,6 +39,26 @@ struct Solid {
     bool (*isintersect)(const Solid *, Ray);
     void (*print)(Solid *); /* For debugging purposes */
 };
+
+Solid *Solid_primitive_new(Mat4 transformation, bool (primitive_isintersect*)(const Solid *, Ray))
+{
+    assert(transformation != NULL);
+    assert(*transformation != NULL);
+
+    Solid *ret = malloc(sizeof *ret);
+
+    if (ret == NULL)
+        return NULL;
+
+    memcpy(ret->scene_transform.to, transformation, sizeof ret->scene_transform.to);
+
+    memcpy(ret->scene_transform.from, ret->scene_transform.to, sizeof ret->scene_transform.from);
+    Mat4_invert(ret->scene_transform.from);
+
+    ret->isintersect = primitiive_isintersect;
+
+    return ret;
+}
 
 bool Ellipsoid_isintersect(const Solid *this, Ray ray)
 {
@@ -94,44 +103,6 @@ bool Torus_isintersect(const Solid *this, Ray ray)
     (void) ray;
 
     return false;
-}
-
-Solid *Solid_primitive_new(Mat4 transformation, enum Type type)
-{
-    assert(transformation != NULL);
-    assert(*transformation != NULL);
-
-    Solid *ret = malloc(sizeof *ret);
-
-    if (ret == NULL)
-        return NULL;
-
-    memcpy(ret->scene_transform.to, transformation, sizeof ret->scene_transform.to);
-
-    memcpy(ret->scene_transform.from, ret->scene_transform.to, sizeof ret->scene_transform.from);
-    Mat4_invert(ret->scene_transform.from);
-
-    switch (type) {
-        case TYPE_ELLIPSOID:
-            ret->isintersect = Ellipsoid_isintersect;
-            break;
-        case TYPE_CUBOID:
-            ret->isintersect = Cuboid_isintersect;
-            break;
-        case TYPE_CONE:
-            ret->isintersect = Cone_isintersect;
-            break;
-        case TYPE_CYLINDER:
-            ret->isintersect = Cylinder_isintersect;
-            break;
-        case TYPE_TORUS:
-            ret->isintersect = Torus_isintersect;
-            break;
-        default:
-            assert(0 && "Unreachable");
-    }
-
-    return ret;
 }
 
 bool Union_isintersect(const Solid *this, Ray ray)
