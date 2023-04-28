@@ -1,6 +1,7 @@
 /* Ozymandias */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <assert.h>
 #include <stdbool.h>
@@ -17,6 +18,16 @@ void Mat4_invert(Mat4 self) /* TODO: Handle the case when a matrix is uninvertib
 {
     assert(self != NULL);
     assert(*self != NULL);
+}
+
+Ray Mat4_mult_ray(Mat4 self, Ray ray) /* TODO: Maybe `ray` should be modified to prevent needless copying */
+{
+    assert(self != NULL);
+    assert(*self != NULL);
+
+    Ray temp;
+
+    return temp;
 }
 
 // typedef struct AnglePair { double theta, phi; } AnglePair;
@@ -40,7 +51,7 @@ struct Solid {
     void (*print)(Solid *); /* For debugging purposes */
 };
 
-Solid *Solid_primitive_new(Mat4 transformation, bool (primitive_isintersect*)(const Solid *, Ray))
+Solid *Solid_primitive_new(Mat4 transformation, bool (*primitive_isintersect)(const Solid *, Ray))
 {
     assert(transformation != NULL);
     assert(*transformation != NULL);
@@ -55,12 +66,28 @@ Solid *Solid_primitive_new(Mat4 transformation, bool (primitive_isintersect*)(co
     memcpy(ret->scene_transform.from, ret->scene_transform.to, sizeof ret->scene_transform.from);
     Mat4_invert(ret->scene_transform.from);
 
-    ret->isintersect = primitiive_isintersect;
+    ret->isintersect = primitive_isintersect;
 
     return ret;
 }
 
-bool Ellipsoid_isintersect(const Solid *this, Ray ray)
+bool Solid_ellipsoid_isintersect(const Solid *this, Ray ray)
+{
+    assert(this != NULL);
+    assert(this->scene_transform.from != NULL);
+    assert(*this->scene_transform.from != NULL);
+
+    Ray tray = Mat4_mult_ray(this->scene_transform.from, ray);
+
+    double b = 2 * (tray.pos.x * tray.dpos.x + tray.pos.y * tray.dpos.y + tray.pos.z * tray.dpos.z);
+    b *= b;
+    double a = tray.dpos.x * tray.dpos.x + tray.dpos.y * tray.dpos.y + tray.dpos.z * tray.dpos.z;
+    double c = tray.pos.x * tray.pos.x + tray.pos.y * tray.pos.y + tray.pos.z * tray.pos.z;
+
+    return b - 4 * a * c >= 0;
+}
+
+bool Solid_cuboid_isintersect(const Solid *this, Ray ray)
 {
     assert(this != NULL);
 
@@ -69,7 +96,7 @@ bool Ellipsoid_isintersect(const Solid *this, Ray ray)
     return false;
 }
 
-bool Cuboid_isintersect(const Solid *this, Ray ray)
+bool Solid_cone_isintersect(const Solid *this, Ray ray)
 {
     assert(this != NULL);
 
@@ -78,7 +105,7 @@ bool Cuboid_isintersect(const Solid *this, Ray ray)
     return false;
 }
 
-bool Cone_isintersect(const Solid *this, Ray ray)
+bool Solid_cylinder_isintersect(const Solid *this, Ray ray)
 {
     assert(this != NULL);
 
@@ -87,7 +114,7 @@ bool Cone_isintersect(const Solid *this, Ray ray)
     return false;
 }
 
-bool Cylinder_isintersect(const Solid *this, Ray ray)
+bool Solid_torus_isintersect(const Solid *this, Ray ray)
 {
     assert(this != NULL);
 
@@ -96,16 +123,7 @@ bool Cylinder_isintersect(const Solid *this, Ray ray)
     return false;
 }
 
-bool Torus_isintersect(const Solid *this, Ray ray)
-{
-    assert(this != NULL);
-
-    (void) ray;
-
-    return false;
-}
-
-bool Union_isintersect(const Solid *this, Ray ray)
+bool Solid_union_isintersect(const Solid *this, Ray ray)
 {
     assert(this != NULL);
     assert(this->left != NULL);
@@ -116,7 +134,7 @@ bool Union_isintersect(const Solid *this, Ray ray)
     return this->left->isintersect(this->left, ray) || this->right->isintersect(this->right, ray);
 }
 
-bool Intersection_isintersect(const Solid *this, Ray ray)
+bool Solid_intersection_isintersect(const Solid *this, Ray ray)
 {
     assert(this != NULL);
     assert(this->left != NULL);
@@ -127,7 +145,7 @@ bool Intersection_isintersect(const Solid *this, Ray ray)
     return this->left->isintersect(this->left, ray) && this->right->isintersect(this->right, ray);
 }
 
-bool Difference_isintersect(const Solid *this, Ray ray)
+bool Solid_difference_isintersect(const Solid *this, Ray ray)
 {
     assert(this != NULL);
     assert(this->left != NULL);
