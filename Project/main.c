@@ -92,20 +92,24 @@ static Vec3 Mat4_mult_Vec3(const Mat4 self, Vec3 vec)
     };
 }
 
+static Vec3 Mat4_mult_Raytip(const Mat4 self, Vec3 raytip)
+{
+    assert(self != NULL);
+
+    return (Vec3) {
+        .x = self[0][0] * raytip.x + self[0][1] * raytip.y + self[0][2] * raytip.z,
+        .y = self[1][0] * raytip.x + self[1][1] * raytip.y + self[1][2] * raytip.z,
+        .z = self[2][0] * raytip.x + self[2][1] * raytip.y + self[2][2] * raytip.z
+    };
+}
+
 static Ray Mat4_mult_Ray(const Mat4 self, Ray ray) /* TODO: Maybe `ray` should be modified to prevent needless copying */
 {
     assert(self != NULL);
 
-    const Mat4 temp = {
-        { self[0][0], self[0][1], self[0][2], 0.0 },
-        { self[1][0], self[1][1], self[1][2], 0.0 },
-        { self[2][0], self[2][1], self[2][2], 0.0 },
-        {        0.0,        0.0,        0.0, 1.0 }
-    };
-
     return (Ray) {
         .pos = Mat4_mult_Vec3(self, ray.pos),
-        .dpos = Mat4_mult_Vec3(temp, ray.dpos)
+        .dpos = Mat4_mult_Raytip(self, ray.dpos)
     };
 }
 
@@ -179,45 +183,50 @@ struct Solid {
         struct { Mat4 to, from; } scene_transform; /* TODO: `to` and `from` should probably be `const` */
         struct { Solid *left, *right; };
     };
-    double (*isintersect)(const Solid *, Ray);
+    double (*luminosity)(const Solid *, Ray);
     void (*print)(Solid *); /* For debugging purposes */
 };
 
 /* TODO: Make deletion functions */
 
-Solid *Solid_primitive_new(Mat4 transformation, double (*primitive_isintersect)(const Solid *, Ray))
+Solid *Solid_primitive_new(Vec3 pos, Dim3 dim, double (*primitive_luminosity)(const Solid *, Ray))
 {
-    assert(transformation != NULL);
-    assert(primitive_isintersect != NULL);
+    assert(primitive_luminosity != NULL);
 
     Solid *ret = malloc(sizeof *ret);
 
     if (ret == NULL)
         return NULL;
 
-    memcpy(ret->scene_transform.to, transformation, sizeof ret->scene_transform.to);
-
-    // Mat4_println(ret->scene_transform.to);
+    Mat4_make_transformation(ret->scene_transform.to, pos, dim);
 
     memcpy(ret->scene_transform.from, ret->scene_transform.to, sizeof ret->scene_transform.from);
     Mat4_invert(ret->scene_transform.from);
 
-    // Mat4_println(ret->scene_transform.from);
-
-    ret->isintersect = primitive_isintersect;
+    ret->luminosity = primitive_luminosity;
 
     return ret;
 }
 
-Solid *Solid_composite_new(Solid *left, Solid *right)
+Solid *Solid_composite_new(Solid *left, Solid *right, double (*composite_luminosity)(const Solid *, Ray))
 {
     assert(left != NULL);
     assert(right != NULL);
+    assert(composite_luminosity);
 
-    return NULL;
+    Solid *ret = malloc(sizeof *ret);
+
+    if (ret == NULL)
+        return NULL;
+
+    ret->left = left;
+    ret->right = right;
+    ret->luminosity = composite_luminosity;
+
+    return ret;
 }
 
-double Solid_ellipsoid_isintersect(const Solid *this, Ray ray)
+double Solid_ellipsoid_luminosity(const Solid *this, Ray ray)
 {
     assert(this != NULL);
     assert(this->scene_transform.from != NULL);
@@ -226,13 +235,16 @@ double Solid_ellipsoid_isintersect(const Solid *this, Ray ray)
     const Ray tray = Mat4_mult_Ray(this->scene_transform.from, ray);
 
     const double a = tray.dpos.x * tray.dpos.x + tray.dpos.y * tray.dpos.y + tray.dpos.z * tray.dpos.z;
-    const double b = 2 * (tray.pos.x * tray.dpos.x + tray.pos.y * tray.dpos.y + tray.pos.z * tray.dpos.z);
+    const double b = 2.0 * (tray.pos.x * tray.dpos.x + tray.pos.y * tray.dpos.y + tray.pos.z * tray.dpos.z);
     const double c = tray.pos.x * tray.pos.x + tray.pos.y * tray.pos.y + tray.pos.z * tray.pos.z - 1.0;
 
-    if (b * b - 4 * a * c < 0)
+    if (b * b - 4.0 * a * c < 0.0)
         return NAN;
 
-    const double closestintersection = (-b - sqrt(b * b - 4 * a * c)) / (2.0 * a); /* TODO: Ensure that this is necessarily the closer of the roots, I think it is */
+    const double closestintersection = (-b - sqrt(b * b - 4.0 * a * c)) / (2.0 * a); /* TODO: Ensure that this is necessarily the closer of the roots, I think it is */
+
+    if (closestintersection < 0.0)
+        return NAN;
 
     const Vec3 intersectionpoint = {
         .x = tray.pos.x + tray.dpos.x * closestintersection,
@@ -242,14 +254,17 @@ double Solid_ellipsoid_isintersect(const Solid *this, Ray ray)
 
     const Vec3 normal = intersectionpoint;
 
-    const Vec3 tnormal = Mat4_mult_Vec3(this->scene_transform.to, normal);
+    const Vec3 tnormal = Mat4_mult_Raytip(this->scene_transform.to, normal);
 
     const double angle = acos(Vec3_dot(ray.dpos, tnormal) / (Vec3_mag(ray.dpos) * Vec3_mag(tnormal)));
 
-    return angle / M_PI * 255.0;
+    return angle / M_PI;
 }
 
-double Solid_cuboid_isintersect(const Solid *this, Ray ray)
+/* TODO: Fix the issues with rendering */
+/* TODO: Make lighting distance-based */
+
+double Solid_cuboid_luminosity(const Solid *this, Ray ray)
 {
     assert(this != NULL);
     assert(this->scene_transform.from != NULL);
@@ -274,11 +289,11 @@ double Solid_cuboid_isintersect(const Solid *this, Ray ray)
 
     /* x == 1 && 0 <= y <= 1 && 0 <= z <= 1 */
     if ((1.0 - tray.pos.x) / tray.dpos.x >= 0.0) {
-        const double a = tray.pos.y + tray.dpos.y * (1 - tray.pos.x) / tray.dpos.x;
-        const double b = tray.pos.z + tray.dpos.z * (1 - tray.pos.x) / tray.dpos.x;
+        const double a = tray.pos.y + tray.dpos.y * (1.0 - tray.pos.x) / tray.dpos.x;
+        const double b = tray.pos.z + tray.dpos.z * (1.0 - tray.pos.x) / tray.dpos.x;
 
         if (0.0 <= a && a <= 1.0 && 0.0 <= b && b <= 1.0) {
-            const double currentintersection = (1 - tray.pos.x) / tray.dpos.x;
+            const double currentintersection = (1.0 - tray.pos.x) / tray.dpos.x;
 
             if (!isnan(closestintersection)) {
                 if (currentintersection < closestintersection) {
@@ -286,11 +301,11 @@ double Solid_cuboid_isintersect(const Solid *this, Ray ray)
                     normal = (Vec3) { .x = 1.0, .y = 0.0, .z = 0.0 };
                 }
 
-                goto compute_luminosity;
+                // goto compute_luminosity;
+            } else {
+                closestintersection = currentintersection;
+                normal = (Vec3) { .x = 1.0, .y = 0.0, .z = 0.0 };
             }
-
-            closestintersection = currentintersection;
-            normal = (Vec3) { .x = 1.0, .y = 0.0, .z = 0.0 };
         }
     }
 
@@ -308,21 +323,21 @@ double Solid_cuboid_isintersect(const Solid *this, Ray ray)
                     normal = (Vec3) { .x = 0.0, .y = -1.0, .z = 0.0 };
                 }
 
-                goto compute_luminosity;
+                // goto compute_luminosity;
+            } else {
+                closestintersection = currentintersection;
+                normal = (Vec3) { .x = 0.0, .y = -1.0, .z = 0.0 };
             }
-
-            closestintersection = currentintersection;
-            normal = (Vec3) { .x = 0.0, .y = -1.0, .z = 0.0 };
         }
     }
 
     /*  0 <= x <= 1 && y == 1 && 0 <= z <= 1 */
     if ((1.0 - tray.pos.y) / tray.dpos.y >= 0.0) {
-        const double a = tray.pos.x + tray.dpos.x * (1 - tray.pos.y) / tray.dpos.y;
-        const double b = tray.pos.z + tray.dpos.z * (1 - tray.pos.y) / tray.dpos.y;
+        const double a = tray.pos.x + tray.dpos.x * (1.0 - tray.pos.y) / tray.dpos.y;
+        const double b = tray.pos.z + tray.dpos.z * (1.0 - tray.pos.y) / tray.dpos.y;
 
         if (0.0 <= a && a <= 1.0 && 0.0 <= b && b <= 1.0) {
-            const double currentintersection = (1 - tray.pos.y) / tray.dpos.y;
+            const double currentintersection = (1.0 - tray.pos.y) / tray.dpos.y;
 
             if (!isnan(closestintersection)) {
                 if (currentintersection < closestintersection) {
@@ -330,11 +345,11 @@ double Solid_cuboid_isintersect(const Solid *this, Ray ray)
                     normal = (Vec3) { .x = 0.0, .y = 1.0, .z = 0.0 };
                 }
 
-                goto compute_luminosity;
+                // goto compute_luminosity;
+            } else {
+                closestintersection = currentintersection;
+                normal = (Vec3) { .x = 0.0, .y = 1.0, .z = 0.0 };
             }
-
-            closestintersection = currentintersection;
-            normal = (Vec3) { .x = 0.0, .y = 1.0, .z = 0.0 };
         }
     }
 
@@ -352,21 +367,21 @@ double Solid_cuboid_isintersect(const Solid *this, Ray ray)
                     normal = (Vec3) { .x = 0.0, .y = 1.0, .z = -1.0 };
                 }
 
-                goto compute_luminosity;
+                // goto compute_luminosity;
+            } else {
+                closestintersection = currentintersection;
+                normal = (Vec3) { .x = 0.0, .y = 1.0, .z = -1.0 };
             }
-
-            closestintersection = currentintersection;
-            normal = (Vec3) { .x = 0.0, .y = 1.0, .z = -1.0 };
         }
     }
 
     /*  0 <= x <= 1 && 0 <= y <= 1 && z == 1 */
     if ((1.0 - tray.pos.z) / tray.dpos.z >= 0.0) {
-        const double a = tray.pos.x + tray.dpos.x * (1 - tray.pos.z) / tray.dpos.z;
-        const double b = tray.pos.y + tray.dpos.y * (1 - tray.pos.z) / tray.dpos.z;
+        const double a = tray.pos.x + tray.dpos.x * (1.0 - tray.pos.z) / tray.dpos.z;
+        const double b = tray.pos.y + tray.dpos.y * (1.0 - tray.pos.z) / tray.dpos.z;
 
         if (0.0 <= a && a <= 1.0 && 0.0 <= b && b <= 1.0) {
-            const double currentintersection = (1 - tray.pos.z) / tray.dpos.z;
+            const double currentintersection = (1.0 - tray.pos.z) / tray.dpos.z;
 
             if (!isnan(closestintersection)) {
                 if (currentintersection < closestintersection) {
@@ -374,27 +389,96 @@ double Solid_cuboid_isintersect(const Solid *this, Ray ray)
                     normal = (Vec3) { .x = 0.0, .y = 0.0, .z = 1.0 };
                 }
 
-                goto compute_luminosity;
+                // goto compute_luminosity;
+            } else {
+                closestintersection = currentintersection;
+                normal = (Vec3) { .x = 0.0, .y = 0.0, .z = 1.0 };
             }
-
-            closestintersection = currentintersection;
-            normal = (Vec3) { .x = 0.0, .y = 0.0, .z = 1.0 };
         }
     }
 
-    compute_luminosity: /* Make the luminosity calculuation be distance-based (inverse square law) */
+    // compute_luminosity: /* Make the luminosity calculuation be distance-based (inverse square law) */
 
     if (isnan(closestintersection))
         return NAN;
 
-    const Vec3 tnormal = Mat4_mult_Vec3(this->scene_transform.to, normal);
+    const Vec3 tnormal = Mat4_mult_Raytip(this->scene_transform.to, normal);
 
     const double angle = acos(Vec3_dot(ray.dpos, tnormal) / (Vec3_mag(ray.dpos) * Vec3_mag(tnormal)));
 
-    return angle / M_PI * 255.0;
+    return angle / M_PI;
 }
 
-double Solid_cone_isintersect(const Solid *this, Ray ray)
+double Solid_cylinder_luminosity(const Solid *this, Ray ray)
+{
+    assert(this != NULL);
+
+    const Ray tray = Mat4_mult_Ray(this->scene_transform.from, ray);
+
+    Vec3 normal;
+
+    double closestintersection = NAN;
+
+    /* z == 0 && x * x + y * y <= 1 */
+    if (-tray.pos.z / tray.dpos.z >= 0.0) {
+        const double a = tray.pos.x + tray.dpos.x * -tray.pos.z / tray.dpos.z;
+        const double b = tray.pos.y + tray.dpos.y * -tray.pos.z / tray.dpos.z;
+
+        if (a * a + b * b <= 1.0) {
+            closestintersection = -tray.pos.z / tray.dpos.z;
+            normal = (Vec3) { .x = 0.0, .y = 0.0, .z = -1.0 };
+        }
+    }
+
+    /* z == 1 && x * x + y * y <= 1 */
+    if ((1.0 - tray.pos.z) / tray.dpos.z >= 0.0) {
+        const double a = tray.pos.x + tray.dpos.x * (1.0 - tray.pos.z) / tray.dpos.z;
+        const double b = tray.pos.y + tray.dpos.y * (1.0 - tray.pos.z) / tray.dpos.z;
+
+        if (a * a + b * b <= 1.0) {
+            const double currentintersection = (1.0 - tray.pos.z) / tray.dpos.z;
+
+            if (isnan(closestintersection) || currentintersection < closestintersection) {
+                closestintersection = currentintersection;
+                normal = (Vec3) { .x = 0.0, .y = 0.0, .z = 1.0 };
+            }
+        }
+    }
+
+    /* 0 < z < 1 && x * x + y * y == 1 */
+    {
+        const double a = tray.dpos.x * tray.dpos.x + tray.dpos.y * tray.dpos.y;
+        const double b = 2.0 * (tray.pos.x * tray.dpos.x + tray.pos.y * tray.dpos.y);
+        const double c = tray.pos.x * tray.pos.x + tray.pos.y * tray.pos.y - 1.0;
+
+        if (b * b - 4.0 * a * c >= 0.0) {
+            const double currentintersection = (-b - sqrt(b * b - 4.0 * a * c)) / (2.0 * a); /* TODO: Ensure that this is necessarily the closer of the roots, I think it is */
+
+            if (currentintersection >= 0.0) {
+                const double z = tray.pos.z + tray.dpos.z * currentintersection;
+
+                if (0.0 < z && z < 1.0 && (isnan(closestintersection) || currentintersection < closestintersection)) {
+                    closestintersection = currentintersection;
+                    normal = (Vec3) {
+                        .x = tray.pos.x + tray.dpos.x * closestintersection,
+                        .y = tray.pos.y + tray.dpos.y * closestintersection,
+                        .z = 0.0
+                    };
+                }
+            }
+        }
+    }
+
+    if (isnan(closestintersection))
+        return NAN;
+
+    const Vec3 tnormal = Mat4_mult_Raytip(this->scene_transform.to, normal);
+
+    const double angle = acos(Vec3_dot(ray.dpos, tnormal) / (Vec3_mag(ray.dpos) * Vec3_mag(tnormal)));
+
+    return angle / M_PI;}
+
+double Solid_cone_luminosity(const Solid *this, Ray ray)
 {
     assert(this != NULL);
 
@@ -403,7 +487,7 @@ double Solid_cone_isintersect(const Solid *this, Ray ray)
     return false;
 }
 
-double Solid_cylinder_isintersect(const Solid *this, Ray ray)
+double Solid_torus_luminosity(const Solid *this, Ray ray)
 {
     assert(this != NULL);
 
@@ -412,53 +496,53 @@ double Solid_cylinder_isintersect(const Solid *this, Ray ray)
     return false;
 }
 
-double Solid_torus_isintersect(const Solid *this, Ray ray)
-{
-    assert(this != NULL);
-
-    (void) ray;
-
-    return false;
-}
-
-double Solid_union_isintersect(const Solid *this, Ray ray)
+double Solid_union_luminosity(const Solid *this, Ray ray)
 {
     assert(this != NULL);
     assert(this->left != NULL);
     assert(this->right != NULL);
-    assert(this->left->isintersect != NULL);
-    assert(this->right->isintersect != NULL);
+    assert(this->left->luminosity != NULL);
+    assert(this->right->luminosity != NULL);
 
-    return this->left->isintersect(this->left, ray) || this->right->isintersect(this->right, ray);
+    /* TODO: This should be distance-based */
+
+    const double leftluminosity = this->left->luminosity(this->left, ray);
+
+    if (!isnan(leftluminosity))
+        return leftluminosity;
+
+    return this->right->luminosity(this->right, ray);
 }
 
-double Solid_intersection_isintersect(const Solid *this, Ray ray)
+double Solid_intersection_luminosity(const Solid *this, Ray ray)
 {
     assert(this != NULL);
     assert(this->left != NULL);
     assert(this->right != NULL);
-    assert(this->left->isintersect != NULL);
-    assert(this->right->isintersect != NULL);
+    assert(this->left->luminosity != NULL);
+    assert(this->right->luminosity != NULL);
 
-    return this->left->isintersect(this->left, ray) && this->right->isintersect(this->right, ray);
+    return this->left->luminosity(this->left, ray) && this->right->luminosity(this->right, ray);
 }
 
-double Solid_difference_isintersect(const Solid *this, Ray ray)
+double Solid_difference_luminosity(const Solid *this, Ray ray)
 {
     assert(this != NULL);
     assert(this->left != NULL);
     assert(this->right != NULL);
-    assert(this->left->isintersect != NULL);
-    assert(this->right->isintersect != NULL);
+    assert(this->left->luminosity != NULL);
+    assert(this->right->luminosity != NULL);
 
-    return this->left->isintersect(this->left, ray) && !this->right->isintersect(this->right, ray);
+    return this->left->luminosity(this->left, ray) && !this->right->luminosity(this->right, ray);
 }
+
+static Color backgroundcolor;
 
 void Solid_render(const Solid *this, Image *image)
 {
     assert(this != NULL);
     assert(image != NULL);
-    assert(this->isintersect != NULL);
+    assert(this->luminosity != NULL);
 
     /* TODO: Consolidate these into a `Camera` object */
 
@@ -473,28 +557,36 @@ void Solid_render(const Solid *this, Image *image)
                 .dpos = (Vec3) { .x = (double) x - Image_width(image) / 2, .y = Image_height(image) / 2 - (double) y, .z = focallength }
             };
 
-            double luminosity = this->isintersect(this, ray);
+            double luminosity = this->luminosity(this, ray);
 
             if (!isnan(luminosity))
-                Image_point(image, x, y, (Color) { .r = luminosity, .g = luminosity, .b = luminosity });
+                Image_point(image, x, y,
+                    (Color) {
+                        .r = (luminosity + 2.0) * backgroundcolor.r / 3.0,
+                        .g = (luminosity + 2.0) * backgroundcolor.g / 3.0,
+                        .b = (luminosity + 2.0) * backgroundcolor.b / 3.0
+                    });
         }
     }
 }
+
+// static Color backgroundcolor = { .r = 212, .g = 204, .b = 167 };
+static Color backgroundcolor = { .r = 212, .g = 204, .b = 167 };
 
 int main(void)
 {
     Image *image = Image_new(1280, 720);
 
-    Image_set_background(image, (Color) { .r = 0x80, .g = 0x00, .b = 0x40 });
+    // Image_set_background(image, (Color) { .r = 0x18, .g = 0x20, .b = 0x00 });
+    // Image_set_background(image, (Color) { .r = 0xff, .g = 0xcf, .b = 0x00 });
+    Image_set_background(image, backgroundcolor);
 
-    Mat4 mat;
-    Mat4_make_transformation(mat,
-        (Vec3) { .x = -200.0, .y = 100.0, .z = 200.0 },
-        (Dim3) { .width = 100.0, .height = 200.0, .depth = 200.0 });
+    Solid *cylinder = Solid_primitive_new(
+        (Vec3) { .x = -500.0, .y = 100.0, .z = 200.0 },
+        (Dim3) { .width = 100.0, .height = 100.0, .depth = 100.0 },
+        Solid_cylinder_luminosity);
 
-    Solid *primitive = Solid_primitive_new(mat, Solid_cuboid_isintersect);
-
-    Solid_render(primitive, image);
+    Solid_render(cylinder, image);
 
     FILE *file = fopen("test.bmp", "wb");
 

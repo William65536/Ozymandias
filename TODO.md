@@ -1,3 +1,3 @@
 # Ozymandias Todo
 
-- [ ] __
+- [ ] Add antialiasing capabilities
