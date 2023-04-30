@@ -70,7 +70,7 @@ void Image_point(Image *self, uint32_t x, uint32_t y, Color color)
     self->data[(y * self->width + x) * 3 + 2] = color.b;
 }
 
-void Image_set_background(Image *self, Color color)
+void Image_clear(Image *self, Color color)
 {
     assert(self != NULL);
 

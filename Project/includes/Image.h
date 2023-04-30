@@ -23,7 +23,7 @@ Color Image_color(const Image *self, uint32_t x, uint32_t y);
 
 void Image_point(Image *self, uint32_t x, uint32_t y, Color color);
 
-void Image_set_background(Image *self, Color color);
+void Image_clear(Image *self, Color color);
 
 bool Image_to_BMP(const Image *self, FILE *file);
 

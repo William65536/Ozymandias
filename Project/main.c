@@ -14,11 +14,14 @@
 /* TODO: Maybe use a LISP-like language internally or use a pseudo symbolic algebra range system to replace the current object-oriented system */
 /* TODO: Add parameterized episolids (episterea) */
 
-typedef double Mat4[4][4]; /* TODO: Maybe make this a 3x4 matrix instead */
+/* TODO: Maybe make this a 3x4 matrix instead */
+typedef double Mat4[4][4];
 
 static void Mat4_invert(Mat4 self)
 {
     assert(self != NULL);
+
+    /* CITE: Inversion formula taken from Wolfram Alpha */
 
     const double denom =
         self[0][0] *
@@ -70,12 +73,9 @@ static void Mat4_invert(Mat4 self)
     memcpy(self, temp, sizeof temp);
 }
 
-// typedef struct AnglePair { double theta, phi; } AnglePair;
-// typedef struct Vec2 { double x, y; } Vec2;
-// typedef struct Dim2 { double width, height; } Dim2;
 typedef struct Vec3 { double x, y, z; } Vec3;
 typedef struct Dim3 { double width, height, depth; } Dim3;
-// typedef struct Vec4 { double x, y, z, w; } Vec4;
+typedef struct Rot3 { double alpha, beta, gamma; } Rot3;
 
 typedef struct Ray {
     Vec3 pos, dpos;
@@ -103,7 +103,8 @@ static Vec3 Mat4_mult_Raytip(const Mat4 self, Vec3 raytip)
     };
 }
 
-static Ray Mat4_mult_Ray(const Mat4 self, Ray ray) /* TODO: Maybe `ray` should be modified to prevent needless copying */
+/* TODO: Maybe `ray` should be modified to prevent needless copying */
+static Ray Mat4_mult_Ray(const Mat4 self, Ray ray)
 {
     assert(self != NULL);
 
@@ -113,24 +114,24 @@ static Ray Mat4_mult_Ray(const Mat4 self, Ray ray) /* TODO: Maybe `ray` should b
     };
 }
 
-/* Add rotations and the like */
-/* static */ void Mat4_make_transformation(Mat4 self, Vec3 pos, Dim3 dim)
+/* TODO: Add rotations and the like */
+static void Mat4_make_transformation(Mat4 self, Vec3 pos, Dim3 dim, Rot3 rot)
 {
     assert(self != NULL);
 
-    self[0][0] = dim.width;
-    self[0][1] = 0.0;
-    self[0][2] = 0.0;
+    self[0][0] = dim.width * cos(rot.beta) * cos(rot.gamma);
+    self[0][1] = dim.height * (sin(rot.alpha) * sin(rot.beta) * cos(rot.gamma) - cos(rot.alpha) * sin(rot.gamma));
+    self[0][2] = dim.depth * (cos(rot.alpha) * sin(rot.beta) * cos(rot.gamma) - sin(rot.alpha) * cos(rot.gamma));
     self[0][3] = pos.x;
 
-    self[1][0] = 0.0;
-    self[1][1] = dim.height;
-    self[1][2] = 0.0;
+    self[1][0] = dim.width * cos(rot.beta) * sin(rot.gamma);
+    self[1][1] = dim.height * (sin(rot.alpha) * sin(rot.beta) * sin(rot.gamma) + cos(rot.alpha) * cos(rot.gamma));
+    self[1][2] = dim.depth * (cos(rot.alpha) * sin(rot.beta) * sin(rot.gamma) - sin(rot.alpha) * cos(rot.gamma));
     self[1][3] = pos.y;
 
-    self[2][0] = 0.0;
-    self[2][1] = 0.0;
-    self[2][2] = dim.depth;
+    self[2][0] = -dim.width * sin(rot.beta);
+    self[2][1] = dim.height * sin(rot.alpha) * cos(rot.beta);
+    self[2][2] = dim.depth * cos(rot.alpha) * cos(rot.beta);
     self[2][3] = pos.z;
 
     self[3][0] = 0.0;
@@ -139,26 +140,26 @@ static Ray Mat4_mult_Ray(const Mat4 self, Ray ray) /* TODO: Maybe `ray` should b
     self[3][3] = 1.0;
 }
 
-double Vec3_mag(Vec3 self)
+static double Vec3_mag(Vec3 self)
 {
     return sqrt(self.x * self.x + self.y * self.y + self.z * self.z);
 }
 
-double Vec3_dot(Vec3 self, Vec3 vec)
+static double Vec3_dot(Vec3 self, Vec3 vec)
 {
     return self.x * vec.x + self.y * vec.y + self.z * vec.z;
 }
 
-Vec3 Vec3_cross(Vec3 self, Vec3 vec)
-{
-    return (Vec3) {
-        .x = self.y * vec.z - self.z * vec.y,
-        .y = self.z * vec.x - self.x * vec.z,
-        .z = self.x * vec.y - self.y * vec.x
-    };
-}
+// static Vec3 Vec3_cross(Vec3 self, Vec3 vec)
+// {
+//     return (Vec3) {
+//         .x = self.y * vec.z - self.z * vec.y,
+//         .y = self.z * vec.x - self.x * vec.z,
+//         .z = self.x * vec.y - self.y * vec.x
+//     };
+// }
 
-/*For debugging purposes */
+/* NOTE: For debugging purposes */
 void Mat4_println(const Mat4 self)
 {
     assert(self != NULL);
@@ -171,11 +172,16 @@ void Mat4_println(const Mat4 self)
     puts("");
 }
 
-/*For debugging purposes */
+/* NOTE: For debugging purposes */
 void Ray_println(Ray self)
 {
     printf("[ <%g %g %g> <%g %g %g> ]\n", self.pos.x, self.pos.y, self.pos.z, self.dpos.x, self.dpos.y, self.dpos.z);
 }
+
+// typedef struct Luminosity {
+//     const double distance;
+//     const Vec3 normal;
+// } Luminosity;
 
 typedef struct Solid Solid;
 struct Solid {
@@ -189,7 +195,7 @@ struct Solid {
 
 /* TODO: Make deletion functions */
 
-Solid *Solid_primitive_new(Vec3 pos, Dim3 dim, double (*primitive_luminosity)(const Solid *, Ray))
+Solid *Solid_primitive_new(Vec3 pos, Dim3 dim, Rot3 rot, double (*primitive_luminosity)(const Solid *, Ray))
 {
     assert(primitive_luminosity != NULL);
 
@@ -198,7 +204,7 @@ Solid *Solid_primitive_new(Vec3 pos, Dim3 dim, double (*primitive_luminosity)(co
     if (ret == NULL)
         return NULL;
 
-    Mat4_make_transformation(ret->scene_transform.to, pos, dim);
+    Mat4_make_transformation(ret->scene_transform.to, pos, dim, rot);
 
     memcpy(ret->scene_transform.from, ret->scene_transform.to, sizeof ret->scene_transform.from);
     Mat4_invert(ret->scene_transform.from);
@@ -496,6 +502,7 @@ double Solid_torus_luminosity(const Solid *this, Ray ray)
     return false;
 }
 
+/* TODO: Allow for whole tranformations on composite structures */
 double Solid_union_luminosity(const Solid *this, Ray ray)
 {
     assert(this != NULL);
@@ -570,21 +577,20 @@ void Solid_render(const Solid *this, Image *image)
     }
 }
 
-// static Color backgroundcolor = { .r = 212, .g = 204, .b = 167 };
 static Color backgroundcolor = { .r = 212, .g = 204, .b = 167 };
 
 int main(void)
 {
     Image *image = Image_new(1280, 720);
 
-    // Image_set_background(image, (Color) { .r = 0x18, .g = 0x20, .b = 0x00 });
-    // Image_set_background(image, (Color) { .r = 0xff, .g = 0xcf, .b = 0x00 });
-    Image_set_background(image, backgroundcolor);
+    Image_clear(image, backgroundcolor);
 
     Solid *cylinder = Solid_primitive_new(
-        (Vec3) { .x = -500.0, .y = 100.0, .z = 200.0 },
-        (Dim3) { .width = 100.0, .height = 100.0, .depth = 100.0 },
-        Solid_cylinder_luminosity);
+        // (Vec3) { .x = -500.0, .y = 100.0, .z = 200.0 },
+        (Vec3) { .x = 0.0, .y = -200.0, .z = 500.0 },
+        (Dim3) { .width = 200.0, .height = 100.0, .depth = 100.0 },
+        (Rot3) { .alpha = 0.0, .beta = 1.0, .gamma = 0.0 },
+        Solid_ellipsoid_luminosity);
 
     Solid_render(cylinder, image);
 
