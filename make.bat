@@ -3,8 +3,12 @@
 SET CC=clang
 SET FLAGS=-Wall -Wextra -Wpedantic -Werror -std=c11
 
+:: Incrementally compile this
+
+%CC% -c %FLAGS% -o Image.o Project\includes\Image.c
+
 %CC% -c %FLAGS% -o main.o Project\main.c
-%CC% -o Project\main main.o -lm
+%CC% -o Project\main Image.o main.o -lm
 
 DEL *.o
 
