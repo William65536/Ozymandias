@@ -121,7 +121,7 @@ static void Mat4_make_transformation(Mat4 self, Vec3 pos, Dim3 dim, Rot3 rot)
 
     self[0][0] = dim.width * cos(rot.beta) * cos(rot.gamma);
     self[0][1] = dim.height * (sin(rot.alpha) * sin(rot.beta) * cos(rot.gamma) - cos(rot.alpha) * sin(rot.gamma));
-    self[0][2] = dim.depth * (cos(rot.alpha) * sin(rot.beta) * cos(rot.gamma) - sin(rot.alpha) * cos(rot.gamma));
+    self[0][2] = dim.depth * (cos(rot.alpha) * sin(rot.beta) * cos(rot.gamma) - sin(rot.alpha) * sin(rot.gamma));
     self[0][3] = pos.x;
 
     self[1][0] = dim.width * cos(rot.beta) * sin(rot.gamma);
