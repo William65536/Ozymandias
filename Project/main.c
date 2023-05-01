@@ -81,7 +81,7 @@ typedef struct Ray {
     Vec3 pos, dpos;
 } Ray;
 
-static Vec3 Mat4_mult_Vec3(const Mat4 self, Vec3 vec)
+static inline Vec3 Mat4_mult_Vec3(const Mat4 self, Vec3 vec)
 {
     assert(self != NULL);
 
@@ -92,7 +92,7 @@ static Vec3 Mat4_mult_Vec3(const Mat4 self, Vec3 vec)
     };
 }
 
-static Vec3 Mat4_mult_Raytip(const Mat4 self, Vec3 raytip)
+static inline Vec3 Mat4_mult_Raytip(const Mat4 self, Vec3 raytip)
 {
     assert(self != NULL);
 
@@ -114,7 +114,7 @@ static Ray Mat4_mult_Ray(const Mat4 self, Ray ray)
     };
 }
 
-/* TODO: Add rotations and the like */
+/* TODO: Add reflections and shearing and the like */
 static void Mat4_make_transformation(Mat4 self, Vec3 pos, Dim3 dim, Rot3 rot)
 {
     assert(self != NULL);
@@ -140,12 +140,12 @@ static void Mat4_make_transformation(Mat4 self, Vec3 pos, Dim3 dim, Rot3 rot)
     self[3][3] = 1.0;
 }
 
-static double Vec3_mag(Vec3 self)
+static inline double Vec3_mag(Vec3 self)
 {
     return sqrt(self.x * self.x + self.y * self.y + self.z * self.z);
 }
 
-static double Vec3_dot(Vec3 self, Vec3 vec)
+static inline double Vec3_dot(Vec3 self, Vec3 vec)
 {
     return self.x * vec.x + self.y * vec.y + self.z * vec.z;
 }
@@ -176,6 +176,12 @@ void Mat4_println(const Mat4 self)
 void Ray_println(Ray self)
 {
     printf("[ <%g %g %g> <%g %g %g> ]\n", self.pos.x, self.pos.y, self.pos.z, self.dpos.x, self.dpos.y, self.dpos.z);
+}
+
+/* NOTE: For debugging purposes */
+void Vec3_println(Vec3 self)
+{
+    printf("<%g %g %g>\n", self.x, self.y, self.z);
 }
 
 // typedef struct Luminosity {
@@ -484,13 +490,64 @@ double Solid_cylinder_luminosity(const Solid *this, Ray ray)
 
     return angle / M_PI;}
 
+/* TODO: Double-check this, I think the color is off */
 double Solid_cone_luminosity(const Solid *this, Ray ray)
 {
     assert(this != NULL);
+    assert(this->scene_transform.from != NULL);
+    assert(this->scene_transform.to != NULL);
 
-    (void) ray;
+    const Ray tray = Mat4_mult_Ray(this->scene_transform.from, ray);
 
-    return false;
+    Vec3 normal;
+
+    /* TODO: Use another sentinel value besides NaN (NAN), e.g. Infinity (INFINITY) as it is guaranteed by the C99 standard, while NaN is optional */
+    double closestintersection = NAN; /* NOTE: Reliant on the IEEE-754 floating-point standard */
+
+
+    /* z == 0 */
+    if (tray.pos.z / tray.dpos.z >= 0)
+        return NAN;
+
+    /* z == 1 && x * x + y * y == 1 */
+    if ((1.0 - tray.pos.z) / tray.dpos.z >= 0) {
+        const double a = tray.pos.x + tray.dpos.x * (1.0 - tray.pos.z) / tray.dpos.z;
+        const double b = tray.pos.y + tray.dpos.y * (1.0 - tray.pos.z) / tray.dpos.z;
+
+        if (a * a + b * b <= 1.0) {
+            closestintersection = (1.0 - tray.pos.z) / tray.dpos.z;
+            normal = (Vec3) { .x = 0.0, .y = 0.0, .z = 1.0 };
+        }
+    }
+
+    /* 0 < z < 1 && x * x + y * y == z * z */
+    {
+        const double a = tray.dpos.x * tray.dpos.x + tray.dpos.y * tray.dpos.y - tray.dpos.z * tray.dpos.z;
+        const double b = 2.0 * (tray.pos.x * tray.dpos.x + tray.pos.y * tray.dpos.y - tray.pos.z * tray.dpos.z);
+        const double c = tray.pos.x * tray.pos.x + tray.pos.y * tray.pos.y - tray.pos.z * tray.pos.z;
+
+        if (b * b - 4.0 * a * c >= 0) {
+            const double t = (-b - sqrt(b * b - 4.0 * a * c)) / (2.0 * a);
+
+            if (t >= 0.0 && 0.0 < tray.pos.z + tray.dpos.z * t && tray.pos.z + tray.dpos.z * t < 1.0 && (isnan(closestintersection) || t < closestintersection)) {
+                closestintersection = t;
+                normal = (Vec3) {
+                    .x = M_SQRT2 / 2.0 * (tray.pos.x + tray.dpos.x * closestintersection),
+                    .y = M_SQRT2 / 2.0 * (tray.pos.y + tray.dpos.y * closestintersection),
+                    .z = M_SQRT2 / 2.0
+                };
+            }
+        }
+    }
+
+    if (isnan(closestintersection))
+        return NAN;
+
+    const Vec3 tnormal = Mat4_mult_Raytip(this->scene_transform.to, normal);
+
+    const double angle = acos(Vec3_dot(ray.dpos, tnormal) / (Vec3_mag(ray.dpos) * Vec3_mag(tnormal)));
+
+    return angle / M_PI;
 }
 
 double Solid_torus_luminosity(const Solid *this, Ray ray)
@@ -499,7 +556,7 @@ double Solid_torus_luminosity(const Solid *this, Ray ray)
 
     (void) ray;
 
-    return false;
+    return NAN;
 }
 
 /* TODO: Allow for whole tranformations on composite structures */
@@ -586,11 +643,11 @@ int main(void)
     Image_clear(image, backgroundcolor);
 
     Solid *cylinder = Solid_primitive_new(
-        // (Vec3) { .x = -500.0, .y = 100.0, .z = 200.0 },
-        (Vec3) { .x = 0.0, .y = -200.0, .z = 500.0 },
-        (Dim3) { .width = 200.0, .height = 100.0, .depth = 100.0 },
+        // (Vec3) { .x = -500.0, .y = 100.0, .z = 500.0 },
+        (Vec3) { .x = 0.0, .y = 0.0, .z = 500.0 },
+        (Dim3) { .width = 100.0, .height = 100.0, .depth = 100.0 },
         (Rot3) { .alpha = 0.0, .beta = 1.0, .gamma = 0.0 },
-        Solid_ellipsoid_luminosity);
+        Solid_cone_luminosity);
 
     Solid_render(cylinder, image);
 
