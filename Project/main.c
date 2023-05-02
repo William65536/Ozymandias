@@ -438,7 +438,7 @@ double Solid_cylinder_luminosity(const Solid *this, Ray ray)
 
         if (a * a + b * b <= 1.0) {
             closestintersection = -tray.pos.z / tray.dpos.z;
-            normal = (Vec3) { .x = 0.0, .y = 0.0, .z = -1.0 };
+            normal = (Vec3) { .x = 0.0, .y = 0.0, .z = 1.0 };
         }
     }
 
@@ -504,7 +504,6 @@ double Solid_cone_luminosity(const Solid *this, Ray ray)
     /* TODO: Use another sentinel value besides NaN (NAN), e.g. Infinity (INFINITY) as it is guaranteed by the C99 standard, while NaN is optional */
     double closestintersection = NAN; /* NOTE: Reliant on the IEEE-754 floating-point standard */
 
-
     /* z == 0 */
     if (tray.pos.z / tray.dpos.z >= 0)
         return NAN;
@@ -534,7 +533,7 @@ double Solid_cone_luminosity(const Solid *this, Ray ray)
                 normal = (Vec3) {
                     .x = M_SQRT2 / 2.0 * (tray.pos.x + tray.dpos.x * closestintersection),
                     .y = M_SQRT2 / 2.0 * (tray.pos.y + tray.dpos.y * closestintersection),
-                    .z = M_SQRT2 / 2.0
+                    .z = -M_SQRT2 / 2.0
                 };
             }
         }
@@ -610,7 +609,7 @@ void Solid_render(const Solid *this, Image *image)
 
     /* TODO: Consolidate these into a `Camera` object */
 
-    const double focallength = 1000.0; /* TODO: Test to find the best focal length */
+    const double focallength = 1700.0; /* TODO: Test to find the best focal length */
 
     Vec3 orig = { .x = 0.0, .y = 0.0, .z = -focallength };
 
@@ -642,14 +641,14 @@ int main(void)
 
     Image_clear(image, backgroundcolor);
 
-    Solid *cylinder = Solid_primitive_new(
+    Solid *solid = Solid_primitive_new(
         // (Vec3) { .x = -500.0, .y = 100.0, .z = 500.0 },
-        (Vec3) { .x = 0.0, .y = 0.0, .z = 500.0 },
-        (Dim3) { .width = 100.0, .height = 100.0, .depth = 100.0 },
-        (Rot3) { .alpha = 0.0, .beta = 1.0, .gamma = 0.0 },
+        (Vec3) { .x = 0.0, .y = 0.0, .z = 1000.0 },
+        (Dim3) { .width = 500.0, .height = 500.0, .depth = 500.0 },
+        (Rot3) { .alpha = 0.0, .beta = M_PI_2, .gamma = 0.0 },
         Solid_cone_luminosity);
 
-    Solid_render(cylinder, image);
+    Solid_render(solid, image);
 
     FILE *file = fopen("test.bmp", "wb");
 
