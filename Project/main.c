@@ -184,10 +184,9 @@ void Vec3_println(Vec3 self)
     printf("<%g %g %g>\n", self.x, self.y, self.z);
 }
 
-// typedef struct Luminosity {
-//     const double distance;
-//     const Vec3 normal;
-// } Luminosity;
+typedef struct Luminosity {
+    double distance, angle;
+} Luminosity;
 
 typedef struct Solid Solid;
 struct Solid {
@@ -195,13 +194,13 @@ struct Solid {
         struct { Mat4 to, from; } scene_transform; /* TODO: `to` and `from` should probably be `const` */
         struct { Solid *left, *right; };
     };
-    double (*luminosity)(const Solid *, Ray);
+    Luminosity (*luminosity)(const Solid *, Ray);
     void (*print)(Solid *); /* For debugging purposes */
 };
 
 /* TODO: Make deletion functions */
 
-Solid *Solid_primitive_new(Vec3 pos, Dim3 dim, Rot3 rot, double (*primitive_luminosity)(const Solid *, Ray))
+Solid *Solid_primitive_new(Vec3 pos, Dim3 dim, Rot3 rot, Luminosity (*primitive_luminosity)(const Solid *, Ray))
 {
     assert(primitive_luminosity != NULL);
 
@@ -220,7 +219,7 @@ Solid *Solid_primitive_new(Vec3 pos, Dim3 dim, Rot3 rot, double (*primitive_lumi
     return ret;
 }
 
-Solid *Solid_composite_new(Solid *left, Solid *right, double (*composite_luminosity)(const Solid *, Ray))
+Solid *Solid_composite_new(Solid *left, Solid *right, Luminosity (*composite_luminosity)(const Solid *, Ray))
 {
     assert(left != NULL);
     assert(right != NULL);
@@ -238,7 +237,10 @@ Solid *Solid_composite_new(Solid *left, Solid *right, double (*composite_luminos
     return ret;
 }
 
-double Solid_ellipsoid_luminosity(const Solid *this, Ray ray)
+/* TODO: Fix the issues with rendering */
+/* TODO: Make lighting distance-based */
+
+Luminosity Solid_ellipsoid_luminosity(const Solid *this, Ray ray)
 {
     assert(this != NULL);
     assert(this->scene_transform.from != NULL);
@@ -251,12 +253,12 @@ double Solid_ellipsoid_luminosity(const Solid *this, Ray ray)
     const double c = tray.pos.x * tray.pos.x + tray.pos.y * tray.pos.y + tray.pos.z * tray.pos.z - 1.0;
 
     if (b * b - 4.0 * a * c < 0.0)
-        return NAN;
+        return (Luminosity) { .distance = INFINITY };
 
     const double closestintersection = (-b - sqrt(b * b - 4.0 * a * c)) / (2.0 * a); /* TODO: Ensure that this is necessarily the closer of the roots, I think it is */
 
     if (closestintersection < 0.0)
-        return NAN;
+        return (Luminosity) { .distance = INFINITY };
 
     const Vec3 intersectionpoint = {
         .x = tray.pos.x + tray.dpos.x * closestintersection,
@@ -270,13 +272,10 @@ double Solid_ellipsoid_luminosity(const Solid *this, Ray ray)
 
     const double angle = acos(Vec3_dot(ray.dpos, tnormal) / (Vec3_mag(ray.dpos) * Vec3_mag(tnormal)));
 
-    return angle / M_PI;
+    return (Luminosity) { .distance = Vec3_mag(Mat4_mult_Raytip(this->scene_transform.to, intersectionpoint)), .angle = angle / M_PI };
 }
 
-/* TODO: Fix the issues with rendering */
-/* TODO: Make lighting distance-based */
-
-double Solid_cuboid_luminosity(const Solid *this, Ray ray)
+Luminosity Solid_cuboid_luminosity(const Solid *this, Ray ray)
 {
     assert(this != NULL);
     assert(this->scene_transform.from != NULL);
@@ -286,7 +285,7 @@ double Solid_cuboid_luminosity(const Solid *this, Ray ray)
 
     Vec3 normal;
 
-    double closestintersection = NAN;
+    double closestintersection = INFINITY;
 
     /* x == 0 && 0 <= y <= 1 && 0 <= z <= 1 */
     if (-tray.pos.x / tray.dpos.x >= 0.0) {
@@ -304,20 +303,11 @@ double Solid_cuboid_luminosity(const Solid *this, Ray ray)
         const double a = tray.pos.y + tray.dpos.y * (1.0 - tray.pos.x) / tray.dpos.x;
         const double b = tray.pos.z + tray.dpos.z * (1.0 - tray.pos.x) / tray.dpos.x;
 
-        if (0.0 <= a && a <= 1.0 && 0.0 <= b && b <= 1.0) {
-            const double currentintersection = (1.0 - tray.pos.x) / tray.dpos.x;
+        const double currentintersection = (1.0 - tray.pos.x) / tray.dpos.x;
 
-            if (!isnan(closestintersection)) {
-                if (currentintersection < closestintersection) {
-                    closestintersection = currentintersection;
-                    normal = (Vec3) { .x = 1.0, .y = 0.0, .z = 0.0 };
-                }
-
-                // goto compute_luminosity;
-            } else {
-                closestintersection = currentintersection;
-                normal = (Vec3) { .x = 1.0, .y = 0.0, .z = 0.0 };
-            }
+        if (0.0 <= a && a <= 1.0 && 0.0 <= b && b <= 1.0 && (isinf(closestintersection) || currentintersection < closestintersection)) {
+            closestintersection = currentintersection;
+            normal = (Vec3) { .x = 1.0, .y = 0.0, .z = 0.0 };
         }
     }
 
@@ -326,20 +316,11 @@ double Solid_cuboid_luminosity(const Solid *this, Ray ray)
         const double a = tray.pos.x + tray.dpos.x * -tray.pos.y / tray.dpos.y;
         const double b = tray.pos.z + tray.dpos.z * -tray.pos.y / tray.dpos.y;
 
-        if (0.0 <= a && a <= 1.0 && 0.0 <= b && b <= 1.0) {
-            const double currentintersection = -tray.pos.y / tray.dpos.y;
+        const double currentintersection = -tray.pos.y / tray.dpos.y;
 
-            if (!isnan(closestintersection)) {
-                if (currentintersection < closestintersection) {
-                    closestintersection = currentintersection;
-                    normal = (Vec3) { .x = 0.0, .y = -1.0, .z = 0.0 };
-                }
-
-                // goto compute_luminosity;
-            } else {
-                closestintersection = currentintersection;
-                normal = (Vec3) { .x = 0.0, .y = -1.0, .z = 0.0 };
-            }
+        if (0.0 <= a && a <= 1.0 && 0.0 <= b && b <= 1.0 && (isinf(closestintersection) || currentintersection < closestintersection)) {
+            closestintersection = currentintersection;
+            normal = (Vec3) { .x = 0.0, .y = -1.0, .z = 0.0 };
         }
     }
 
@@ -348,20 +329,11 @@ double Solid_cuboid_luminosity(const Solid *this, Ray ray)
         const double a = tray.pos.x + tray.dpos.x * (1.0 - tray.pos.y) / tray.dpos.y;
         const double b = tray.pos.z + tray.dpos.z * (1.0 - tray.pos.y) / tray.dpos.y;
 
-        if (0.0 <= a && a <= 1.0 && 0.0 <= b && b <= 1.0) {
-            const double currentintersection = (1.0 - tray.pos.y) / tray.dpos.y;
+        const double currentintersection = (1.0 - tray.pos.y) / tray.dpos.y;
 
-            if (!isnan(closestintersection)) {
-                if (currentintersection < closestintersection) {
-                    closestintersection = currentintersection;
-                    normal = (Vec3) { .x = 0.0, .y = 1.0, .z = 0.0 };
-                }
-
-                // goto compute_luminosity;
-            } else {
-                closestintersection = currentintersection;
-                normal = (Vec3) { .x = 0.0, .y = 1.0, .z = 0.0 };
-            }
+        if (0.0 <= a && a <= 1.0 && 0.0 <= b && b <= 1.0 && (isinf(closestintersection) || currentintersection < closestintersection)) {
+            closestintersection = currentintersection;
+            normal = (Vec3) { .x = 0.0, .y = 1.0, .z = 0.0 };
         }
     }
 
@@ -370,20 +342,11 @@ double Solid_cuboid_luminosity(const Solid *this, Ray ray)
         const double a = tray.pos.x + tray.dpos.x * -tray.pos.z / tray.dpos.z;
         const double b = tray.pos.y + tray.dpos.y * -tray.pos.z / tray.dpos.z;
 
-        if (0.0 <= a && a <= 1.0 && 0.0 <= b && b <= 1.0) {
-            const double currentintersection = -tray.pos.z / tray.dpos.z;
+        const double currentintersection = -tray.pos.z / tray.dpos.z;
 
-            if (!isnan(closestintersection)) {
-                if (currentintersection < closestintersection) {
-                    closestintersection = currentintersection;
-                    normal = (Vec3) { .x = 0.0, .y = 1.0, .z = -1.0 };
-                }
-
-                // goto compute_luminosity;
-            } else {
-                closestintersection = currentintersection;
-                normal = (Vec3) { .x = 0.0, .y = 1.0, .z = -1.0 };
-            }
+        if (0.0 <= a && a <= 1.0 && 0.0 <= b && b <= 1.0 && (isinf(closestintersection) || currentintersection < closestintersection)) {
+            closestintersection = currentintersection;
+            normal = (Vec3) { .x = 0.0, .y = 0.0, .z = -1.0 };
         }
     }
 
@@ -392,36 +355,33 @@ double Solid_cuboid_luminosity(const Solid *this, Ray ray)
         const double a = tray.pos.x + tray.dpos.x * (1.0 - tray.pos.z) / tray.dpos.z;
         const double b = tray.pos.y + tray.dpos.y * (1.0 - tray.pos.z) / tray.dpos.z;
 
-        if (0.0 <= a && a <= 1.0 && 0.0 <= b && b <= 1.0) {
-            const double currentintersection = (1.0 - tray.pos.z) / tray.dpos.z;
+        const double currentintersection = (1.0 - tray.pos.z) / tray.dpos.z;
 
-            if (!isnan(closestintersection)) {
-                if (currentintersection < closestintersection) {
-                    closestintersection = currentintersection;
-                    normal = (Vec3) { .x = 0.0, .y = 0.0, .z = 1.0 };
-                }
-
-                // goto compute_luminosity;
-            } else {
-                closestintersection = currentintersection;
-                normal = (Vec3) { .x = 0.0, .y = 0.0, .z = 1.0 };
-            }
+        if (0.0 <= a && a <= 1.0 && 0.0 <= b && b <= 1.0 && (isinf(closestintersection) || currentintersection < closestintersection)) {
+            closestintersection = currentintersection;
+            normal = (Vec3) { .x = 0.0, .y = 0.0, .z = 1.0 };
         }
     }
 
     // compute_luminosity: /* Make the luminosity calculuation be distance-based (inverse square law) */
 
-    if (isnan(closestintersection))
-        return NAN;
+    if (isinf(closestintersection))
+        return (Luminosity) { .distance = INFINITY };
 
     const Vec3 tnormal = Mat4_mult_Raytip(this->scene_transform.to, normal);
 
     const double angle = acos(Vec3_dot(ray.dpos, tnormal) / (Vec3_mag(ray.dpos) * Vec3_mag(tnormal)));
 
-    return angle / M_PI;
+    const Vec3 intersectionpoint = {
+        .x = tray.pos.x + tray.dpos.x * closestintersection,
+        .y = tray.pos.y + tray.dpos.y * closestintersection,
+        .z = tray.pos.z + tray.dpos.z * closestintersection
+    };
+
+    return (Luminosity) { .distance = Vec3_mag(Mat4_mult_Raytip(this->scene_transform.to, intersectionpoint)), .angle = angle / M_PI };
 }
 
-double Solid_cylinder_luminosity(const Solid *this, Ray ray)
+Luminosity Solid_cylinder_luminosity(const Solid *this, Ray ray)
 {
     assert(this != NULL);
 
@@ -429,7 +389,7 @@ double Solid_cylinder_luminosity(const Solid *this, Ray ray)
 
     Vec3 normal;
 
-    double closestintersection = NAN;
+    double closestintersection = INFINITY;
 
     /* z == 0 && x * x + y * y <= 1 */
     if (-tray.pos.z / tray.dpos.z >= 0.0) {
@@ -438,7 +398,7 @@ double Solid_cylinder_luminosity(const Solid *this, Ray ray)
 
         if (a * a + b * b <= 1.0) {
             closestintersection = -tray.pos.z / tray.dpos.z;
-            normal = (Vec3) { .x = 0.0, .y = 0.0, .z = 1.0 };
+            normal = (Vec3) { .x = 0.0, .y = 0.0, .z = -1.0 };
         }
     }
 
@@ -447,13 +407,11 @@ double Solid_cylinder_luminosity(const Solid *this, Ray ray)
         const double a = tray.pos.x + tray.dpos.x * (1.0 - tray.pos.z) / tray.dpos.z;
         const double b = tray.pos.y + tray.dpos.y * (1.0 - tray.pos.z) / tray.dpos.z;
 
-        if (a * a + b * b <= 1.0) {
-            const double currentintersection = (1.0 - tray.pos.z) / tray.dpos.z;
+        const double currentintersection = (1.0 - tray.pos.z) / tray.dpos.z;
 
-            if (isnan(closestintersection) || currentintersection < closestintersection) {
-                closestintersection = currentintersection;
-                normal = (Vec3) { .x = 0.0, .y = 0.0, .z = 1.0 };
-            }
+        if (a * a + b * b <= 1.0 && (isinf(closestintersection) || currentintersection < closestintersection)) {
+            closestintersection = currentintersection;
+            normal = (Vec3) { .x = 0.0, .y = 0.0, .z = 1.0 };
         }
     }
 
@@ -469,7 +427,7 @@ double Solid_cylinder_luminosity(const Solid *this, Ray ray)
             if (currentintersection >= 0.0) {
                 const double z = tray.pos.z + tray.dpos.z * currentintersection;
 
-                if (0.0 < z && z < 1.0 && (isnan(closestintersection) || currentintersection < closestintersection)) {
+                if (0.0 < z && z < 1.0 && (isinf(closestintersection) || currentintersection < closestintersection)) {
                     closestintersection = currentintersection;
                     normal = (Vec3) {
                         .x = tray.pos.x + tray.dpos.x * closestintersection,
@@ -481,17 +439,24 @@ double Solid_cylinder_luminosity(const Solid *this, Ray ray)
         }
     }
 
-    if (isnan(closestintersection))
-        return NAN;
+    if (isinf(closestintersection))
+        return (Luminosity) { .distance = INFINITY };
 
     const Vec3 tnormal = Mat4_mult_Raytip(this->scene_transform.to, normal);
 
     const double angle = acos(Vec3_dot(ray.dpos, tnormal) / (Vec3_mag(ray.dpos) * Vec3_mag(tnormal)));
 
-    return angle / M_PI;}
+    const Vec3 intersectionpoint = {
+        .x = tray.pos.x + tray.dpos.x * closestintersection,
+        .y = tray.pos.y + tray.dpos.y * closestintersection,
+        .z = tray.pos.z + tray.dpos.z * closestintersection
+    };
+
+    return (Luminosity) { .distance = Vec3_mag(Mat4_mult_Raytip(this->scene_transform.to, intersectionpoint)), .angle = angle / M_PI };
+}
 
 /* TODO: Double-check this, I think the color is off */
-double Solid_cone_luminosity(const Solid *this, Ray ray)
+Luminosity Solid_cone_luminosity(const Solid *this, Ray ray)
 {
     assert(this != NULL);
     assert(this->scene_transform.from != NULL);
@@ -501,12 +466,11 @@ double Solid_cone_luminosity(const Solid *this, Ray ray)
 
     Vec3 normal;
 
-    /* TODO: Use another sentinel value besides NaN (NAN), e.g. Infinity (INFINITY) as it is guaranteed by the C99 standard, while NaN is optional */
-    double closestintersection = NAN; /* NOTE: Reliant on the IEEE-754 floating-point standard */
+    double closestintersection = INFINITY;
 
     /* z == 0 */
     if (tray.pos.z / tray.dpos.z >= 0)
-        return NAN;
+        return (Luminosity) { .distance = INFINITY };
 
     /* z == 1 && x * x + y * y == 1 */
     if ((1.0 - tray.pos.z) / tray.dpos.z >= 0) {
@@ -528,7 +492,7 @@ double Solid_cone_luminosity(const Solid *this, Ray ray)
         if (b * b - 4.0 * a * c >= 0) {
             const double t = (-b - sqrt(b * b - 4.0 * a * c)) / (2.0 * a);
 
-            if (t >= 0.0 && 0.0 < tray.pos.z + tray.dpos.z * t && tray.pos.z + tray.dpos.z * t < 1.0 && (isnan(closestintersection) || t < closestintersection)) {
+            if (t >= 0.0 && 0.0 < tray.pos.z + tray.dpos.z * t && tray.pos.z + tray.dpos.z * t < 1.0 && (isinf(closestintersection) || t < closestintersection)) {
                 closestintersection = t;
                 normal = (Vec3) {
                     .x = M_SQRT2 / 2.0 * (tray.pos.x + tray.dpos.x * closestintersection),
@@ -539,67 +503,68 @@ double Solid_cone_luminosity(const Solid *this, Ray ray)
         }
     }
 
-    if (isnan(closestintersection))
-        return NAN;
+    if (isinf(closestintersection))
+        return (Luminosity) { .distance = INFINITY};
 
     const Vec3 tnormal = Mat4_mult_Raytip(this->scene_transform.to, normal);
 
     const double angle = acos(Vec3_dot(ray.dpos, tnormal) / (Vec3_mag(ray.dpos) * Vec3_mag(tnormal)));
 
-    return angle / M_PI;
+    const Vec3 intersectionpoint = {
+        .x = tray.pos.x + tray.dpos.x * closestintersection,
+        .y = tray.pos.y + tray.dpos.y * closestintersection,
+        .z = tray.pos.z + tray.dpos.z * closestintersection
+    };
+
+    return (Luminosity) { .distance = Vec3_mag(Mat4_mult_Raytip(this->scene_transform.to, intersectionpoint)), .angle = angle / M_PI };
 }
 
-double Solid_torus_luminosity(const Solid *this, Ray ray)
-{
-    assert(this != NULL);
+// /* TODO: Allow for whole tranformations on composite structures */
+// Luminosity Solid_union_luminosity(const Solid *this, Ray ray)
+// {
+//     assert(this != NULL);
+//     assert(this->left != NULL);
+//     assert(this->right != NULL);
+//     assert(this->left->luminosity != NULL);
+//     assert(this->right->luminosity != NULL);
 
-    (void) ray;
+//     const Luminosity leftluminosity = this->left->luminosity(this->left, ray);
+//     const Luminosity rightluminosity = this->right->luminosity(this->right, ray);
 
-    return NAN;
-}
+//     if (isinf(leftluminosity.distance))
+//         return rightluminosity;
 
-/* TODO: Allow for whole tranformations on composite structures */
-double Solid_union_luminosity(const Solid *this, Ray ray)
-{
-    assert(this != NULL);
-    assert(this->left != NULL);
-    assert(this->right != NULL);
-    assert(this->left->luminosity != NULL);
-    assert(this->right->luminosity != NULL);
+//     if (isinf(rightluminosity.distance))
+//         return leftluminosity;
 
-    /* TODO: This should be distance-based */
+//     return leftluminosity.distance > rightluminosity.distance ? rightluminosity : leftluminosity;
+// }
 
-    const double leftluminosity = this->left->luminosity(this->left, ray);
+// Luminosity Solid_intersection_luminosity(const Solid *this, Ray ray)
+// {
+//     assert(this != NULL);
+//     assert(this->left != NULL);
+//     assert(this->right != NULL);
+//     assert(this->left->luminosity != NULL);
+//     assert(this->right->luminosity != NULL);
 
-    if (!isnan(leftluminosity))
-        return leftluminosity;
 
-    return this->right->luminosity(this->right, ray);
-}
 
-double Solid_intersection_luminosity(const Solid *this, Ray ray)
-{
-    assert(this != NULL);
-    assert(this->left != NULL);
-    assert(this->right != NULL);
-    assert(this->left->luminosity != NULL);
-    assert(this->right->luminosity != NULL);
+//     return this->left->luminosity(this->left, ray) && this->right->luminosity(this->right, ray);
+// }
 
-    return this->left->luminosity(this->left, ray) && this->right->luminosity(this->right, ray);
-}
+// Luminosity Solid_difference_luminosity(const Solid *this, Ray ray)
+// {
+//     assert(this != NULL);
+//     assert(this->left != NULL);
+//     assert(this->right != NULL);
+//     assert(this->left->luminosity != NULL);
+//     assert(this->right->luminosity != NULL);
 
-double Solid_difference_luminosity(const Solid *this, Ray ray)
-{
-    assert(this != NULL);
-    assert(this->left != NULL);
-    assert(this->right != NULL);
-    assert(this->left->luminosity != NULL);
-    assert(this->right->luminosity != NULL);
+//     return this->left->luminosity(this->left, ray) && !this->right->luminosity(this->right, ray);
+// }
 
-    return this->left->luminosity(this->left, ray) && !this->right->luminosity(this->right, ray);
-}
-
-static Color backgroundcolor;
+static const Color backgroundcolor;
 
 void Solid_render(const Solid *this, Image *image)
 {
@@ -620,20 +585,21 @@ void Solid_render(const Solid *this, Image *image)
                 .dpos = (Vec3) { .x = (double) x - Image_width(image) / 2, .y = Image_height(image) / 2 - (double) y, .z = focallength }
             };
 
-            double luminosity = this->luminosity(this, ray);
+            Luminosity luminosity = this->luminosity(this, ray);
 
-            if (!isnan(luminosity))
+            if (isfinite(luminosity.distance)) {
                 Image_point(image, x, y,
                     (Color) {
-                        .r = (luminosity + 2.0) * backgroundcolor.r / 3.0,
-                        .g = (luminosity + 2.0) * backgroundcolor.g / 3.0,
-                        .b = (luminosity + 2.0) * backgroundcolor.b / 3.0
+                        .r = ((luminosity.angle - 0.5) * 2.0 + 2.0) * backgroundcolor.r / 3.0,
+                        .g = ((luminosity.angle - 0.5) * 2.0 + 2.0) * backgroundcolor.g / 3.0,
+                        .b = ((luminosity.angle - 0.5) * 2.0 + 2.0) * backgroundcolor.b / 3.0
                     });
+            }
         }
     }
 }
 
-static Color backgroundcolor = { .r = 212, .g = 204, .b = 167 };
+static const Color backgroundcolor = { .r = 212, .g = 204, .b = 167 };
 
 int main(void)
 {
@@ -644,9 +610,9 @@ int main(void)
     Solid *solid = Solid_primitive_new(
         // (Vec3) { .x = -500.0, .y = 100.0, .z = 500.0 },
         (Vec3) { .x = 0.0, .y = 0.0, .z = 1000.0 },
-        (Dim3) { .width = 500.0, .height = 500.0, .depth = 500.0 },
+        (Dim3) { .width = 100.0, .height = 100.0, .depth = 100.0 },
         (Rot3) { .alpha = 0.0, .beta = M_PI_2, .gamma = 0.0 },
-        Solid_cone_luminosity);
+        Solid_cylinder_luminosity);
 
     Solid_render(solid, image);
 
