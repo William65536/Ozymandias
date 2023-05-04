@@ -184,8 +184,13 @@ void Vec3_println(Vec3 self)
     printf("<%g %g %g>\n", self.x, self.y, self.z);
 }
 
+typedef struct Range {
+    double near, far; /* NOTE: low <= high */
+} Range;
+
 typedef struct Luminosity {
-    double distance, angle;
+    Range range; /* TODO: Make this accommodate tori when they're added */
+    double angle;
 } Luminosity;
 
 typedef struct Solid Solid;
@@ -253,26 +258,40 @@ Luminosity Solid_ellipsoid_luminosity(const Solid *this, Ray ray)
     const double c = tray.pos.x * tray.pos.x + tray.pos.y * tray.pos.y + tray.pos.z * tray.pos.z - 1.0;
 
     if (b * b - 4.0 * a * c < 0.0)
-        return (Luminosity) { .distance = INFINITY };
+        return (Luminosity) { .range = { .near = INFINITY, .far = INFINITY } };
 
-    const double closestintersection = (-b - sqrt(b * b - 4.0 * a * c)) / (2.0 * a); /* TODO: Ensure that this is necessarily the closer of the roots, I think it is */
-
-    if (closestintersection < 0.0)
-        return (Luminosity) { .distance = INFINITY };
-
-    const Vec3 intersectionpoint = {
-        .x = tray.pos.x + tray.dpos.x * closestintersection,
-        .y = tray.pos.y + tray.dpos.y * closestintersection,
-        .z = tray.pos.z + tray.dpos.z * closestintersection
+    const Range range = {
+        .near = (-b - sqrt(b * b - 4.0 * a * c)) / (2.0 * a), /* TODO: Ensure that this is necessarily the closer of the roots, I think it is */
+        .far = (-b + sqrt(b * b - 4.0 * a * c)) / (2.0 * a)
     };
 
-    const Vec3 normal = intersectionpoint;
+    /* TODO: Find further restrictions --- reimplement the ones you've already made */
+
+    const struct { Vec3 near; Vec3 far; } intersectionpoints = {
+        .near = {
+            .x = tray.pos.x + tray.dpos.x * range.near,
+            .y = tray.pos.y + tray.dpos.y * range.near,
+            .z = tray.pos.z + tray.dpos.z * range.near
+        },
+        .far = {
+            .x = tray.pos.x + tray.dpos.x * range.far,
+            .y = tray.pos.y + tray.dpos.y * range.far,
+            .z = tray.pos.z + tray.dpos.z * range.far
+        }
+    };
+
+    const Vec3 normal = intersectionpoints.near;
 
     const Vec3 tnormal = Mat4_mult_Raytip(this->scene_transform.to, normal);
 
     const double angle = acos(Vec3_dot(ray.dpos, tnormal) / (Vec3_mag(ray.dpos) * Vec3_mag(tnormal)));
 
-    return (Luminosity) { .distance = Vec3_mag(Mat4_mult_Raytip(this->scene_transform.to, intersectionpoint)), .angle = angle / M_PI };
+    const Range trange = {
+        .near = Vec3_mag(Mat4_mult_Raytip(this->scene_transform.to, intersectionpoints.near)),
+        .far = Vec3_mag(Mat4_mult_Raytip(this->scene_transform.to, intersectionpoints.far))
+    };
+
+    return (Luminosity) { .angle = angle / M_PI, .range = trange };
 }
 
 Luminosity Solid_cuboid_luminosity(const Solid *this, Ray ray)
