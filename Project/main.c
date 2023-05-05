@@ -258,7 +258,7 @@ Luminosity Solid_ellipsoid_luminosity(const Solid *this, Ray ray)
     const double c = tray.pos.x * tray.pos.x + tray.pos.y * tray.pos.y + tray.pos.z * tray.pos.z - 1.0;
 
     if (b * b - 4.0 * a * c < 0.0)
-        return (Luminosity) { .range = { .near = INFINITY, .far = INFINITY } };
+        return (Luminosity) { .range = { .near = INFINITY } };
 
     const Range range = {
         .near = (-b - sqrt(b * b - 4.0 * a * c)) / (2.0 * a), /* TODO: Ensure that this is necessarily the closer of the roots, I think it is */
@@ -287,12 +287,14 @@ Luminosity Solid_ellipsoid_luminosity(const Solid *this, Ray ray)
     const double angle = acos(Vec3_dot(ray.dpos, tnormal) / (Vec3_mag(ray.dpos) * Vec3_mag(tnormal)));
 
     const Range trange = {
-        .near = Vec3_mag(Mat4_mult_Raytip(this->scene_transform.to, intersectionpoints.near)),
-        .far = Vec3_mag(Mat4_mult_Raytip(this->scene_transform.to, intersectionpoints.far))
+        .near = Vec3_mag(Mat4_mult_Vec3(this->scene_transform.to, intersectionpoints.near)),
+        .far = Vec3_mag(Mat4_mult_Vec3(this->scene_transform.to, intersectionpoints.far))
     };
 
     return (Luminosity) { .angle = angle / M_PI, .range = trange };
 }
+
+#if 0
 
 Luminosity Solid_cuboid_luminosity(const Solid *this, Ray ray)
 {
@@ -538,50 +540,71 @@ Luminosity Solid_cone_luminosity(const Solid *this, Ray ray)
     return (Luminosity) { .distance = Vec3_mag(Mat4_mult_Raytip(this->scene_transform.to, intersectionpoint)), .angle = angle / M_PI };
 }
 
-// /* TODO: Allow for whole tranformations on composite structures */
-// Luminosity Solid_union_luminosity(const Solid *this, Ray ray)
-// {
-//     assert(this != NULL);
-//     assert(this->left != NULL);
-//     assert(this->right != NULL);
-//     assert(this->left->luminosity != NULL);
-//     assert(this->right->luminosity != NULL);
+#endif
 
-//     const Luminosity leftluminosity = this->left->luminosity(this->left, ray);
-//     const Luminosity rightluminosity = this->right->luminosity(this->right, ray);
+/* TODO: Allow for whole tranformations on composite structures */
+Luminosity Solid_union_luminosity(const Solid *this, Ray ray)
+{
+    assert(this != NULL);
+    assert(this->left != NULL);
+    assert(this->right != NULL);
+    assert(this->left->luminosity != NULL);
+    assert(this->right->luminosity != NULL);
 
-//     if (isinf(leftluminosity.distance))
-//         return rightluminosity;
+    const Luminosity leftluminosity = this->left->luminosity(this->left, ray);
+    const Luminosity rightluminosity = this->right->luminosity(this->right, ray);
 
-//     if (isinf(rightluminosity.distance))
-//         return leftluminosity;
+    if (isinf(leftluminosity.range.near))
+        return rightluminosity;
 
-//     return leftluminosity.distance > rightluminosity.distance ? rightluminosity : leftluminosity;
-// }
+    if (isinf(rightluminosity.range.near))
+        return leftluminosity;
 
-// Luminosity Solid_intersection_luminosity(const Solid *this, Ray ray)
-// {
-//     assert(this != NULL);
-//     assert(this->left != NULL);
-//     assert(this->right != NULL);
-//     assert(this->left->luminosity != NULL);
-//     assert(this->right->luminosity != NULL);
+    const double near = fmin(leftluminosity.range.near, rightluminosity.range.near);
+    const double far = fmax(leftluminosity.range.far, rightluminosity.range.far);
 
+    return (Luminosity) { .range = { .near = near, .far = far }, .angle = near == leftluminosity.range.near ? leftluminosity.angle : rightluminosity.angle };
+}
 
+Luminosity Solid_intersection_luminosity(const Solid *this, Ray ray)
+{
+    assert(this != NULL);
+    assert(this->left != NULL);
+    assert(this->right != NULL);
+    assert(this->left->luminosity != NULL);
+    assert(this->right->luminosity != NULL);
 
-//     return this->left->luminosity(this->left, ray) && this->right->luminosity(this->right, ray);
-// }
+    const Luminosity leftluminosity = this->left->luminosity(this->left, ray);
+    const Luminosity rightluminosity = this->right->luminosity(this->right, ray);
 
-// Luminosity Solid_difference_luminosity(const Solid *this, Ray ray)
-// {
-//     assert(this != NULL);
-//     assert(this->left != NULL);
-//     assert(this->right != NULL);
-//     assert(this->left->luminosity != NULL);
-//     assert(this->right->luminosity != NULL);
+    if (isinf(leftluminosity.range.near) || isinf(rightluminosity.range.near))
+        return (Luminosity) { .range = { .near = INFINITY } };
 
-//     return this->left->luminosity(this->left, ray) && !this->right->luminosity(this->right, ray);
-// }
+    const double near = fmax(leftluminosity.range.near, rightluminosity.range.near);
+    const double far = fmax(leftluminosity.range.far, rightluminosity.range.far);
+
+    return (Luminosity) { .range = { .near = near, .far = far }, .angle = near == leftluminosity.range.near ? leftluminosity.angle : rightluminosity.angle };
+}
+
+Luminosity Solid_difference_luminosity(const Solid *this, Ray ray)
+{
+    assert(this != NULL);
+    assert(this->left != NULL);
+    assert(this->right != NULL);
+    assert(this->left->luminosity != NULL);
+    assert(this->right->luminosity != NULL);
+
+    const Luminosity leftluminosity = this->left->luminosity(this->left, ray);
+    const Luminosity rightluminosity = this->right->luminosity(this->right, ray);
+
+    if (isinf(leftluminosity.range.near))
+        return (Luminosity) { .range = { .near = INFINITY } };
+
+    if (isinf(rightluminosity.range.near))
+        return leftluminosity;
+
+    return ;
+}
 
 static const Color backgroundcolor;
 
@@ -590,6 +613,8 @@ void Solid_render(const Solid *this, Image *image)
     assert(this != NULL);
     assert(image != NULL);
     assert(this->luminosity != NULL);
+
+    /* TODO: Add clipping */
 
     /* TODO: Consolidate these into a `Camera` object */
 
@@ -606,7 +631,7 @@ void Solid_render(const Solid *this, Image *image)
 
             Luminosity luminosity = this->luminosity(this, ray);
 
-            if (isfinite(luminosity.distance)) {
+            if (isfinite(luminosity.range.near)) {
                 Image_point(image, x, y,
                     (Color) {
                         .r = ((luminosity.angle - 0.5) * 2.0 + 2.0) * backgroundcolor.r / 3.0,
@@ -620,27 +645,40 @@ void Solid_render(const Solid *this, Image *image)
 
 static const Color backgroundcolor = { .r = 212, .g = 204, .b = 167 };
 
+/* TODO: Use `zig cc` instead of `clang` */
+
 int main(void)
 {
     Image *image = Image_new(1280, 720);
+    {
+        Image_clear(image, backgroundcolor);
 
-    Image_clear(image, backgroundcolor);
+        Solid *circles[2];
 
-    Solid *solid = Solid_primitive_new(
-        // (Vec3) { .x = -500.0, .y = 100.0, .z = 500.0 },
-        (Vec3) { .x = 0.0, .y = 0.0, .z = 1000.0 },
-        (Dim3) { .width = 100.0, .height = 100.0, .depth = 100.0 },
-        (Rot3) { .alpha = 0.0, .beta = M_PI_2, .gamma = 0.0 },
-        Solid_cylinder_luminosity);
+        circles[0] = Solid_primitive_new(
+            (Vec3) { .x = 0.0, .y = -200.0, .z = 1000.0 },
+            (Dim3) { .width = 100.0, .height = 100.0, .depth = 100.0 },
+            (Rot3) { .alpha = 0.0, .beta = M_PI_2, .gamma = 0.0 },
+            Solid_ellipsoid_luminosity);
 
-    Solid_render(solid, image);
+        circles[1] = Solid_primitive_new(
+            (Vec3) { .x = 150.0, .y = -200.0, .z = 1000.0 },
+            (Dim3) { .width = 100.0, .height = 100.0, .depth = 100.0 },
+            (Rot3) { .alpha = 0.0, .beta = M_PI_2, .gamma = 0.0 },
+            Solid_ellipsoid_luminosity);
 
-    FILE *file = fopen("test.bmp", "wb");
+        Solid *solid = Solid_composite_new(circles[0], circles[1], Solid_intersection_luminosity);
 
-    Image_to_BMP(image, file);
+        Solid_render(solid, image);
 
-    fclose(file);
 
+
+        FILE *file = fopen("test.bmp", "wb");
+        {
+            Image_to_BMP(image, file);
+        }
+        fclose(file);
+    }
     Image_delete(&image);
 
     return 0;
