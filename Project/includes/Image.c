@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -12,9 +11,13 @@ struct Image {
     uint8_t data[];
 };
 
-Image *Image_new(uint32_t width, uint32_t height)
+Image *Image_new(uint32_t width, uint32_t height, void *(*allocator)(size_t))
 {
-    Image *ret = malloc(sizeof *ret + width * height * 3 * sizeof *ret->data);
+    Image *ret = allocator(sizeof *ret + width * height * 3 * sizeof *ret->data);
+
+    if (ret == NULL)
+        return NULL;
+
     ret->width = width;
     ret->height = height;
 
@@ -23,11 +26,11 @@ Image *Image_new(uint32_t width, uint32_t height)
     return ret;
 }
 
-void Image_delete(Image **self)
+void Image_delete(Image **self, void (*deallocator)(void *))
 {
     assert(self != NULL && *self != NULL);
 
-    free(*self);
+    deallocator(*self);
     
     *self = NULL;
 }
