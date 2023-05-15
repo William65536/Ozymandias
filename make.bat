@@ -1,7 +1,7 @@
 @ECHO OFF
 
 SET CC=clang
-SET FLAGS=-Wall -Wextra -Wpedantic -Werror -std=c11
+SET FLAGS=-Wall -Wextra -Wpedantic -Werror -std=c17
 
 :: Incrementally compile this - use CMake
 
@@ -9,7 +9,7 @@ SET FLAGS=-Wall -Wextra -Wpedantic -Werror -std=c11
 
 %CC% -c %FLAGS% -o LinearAlgebra.o Project\includes\LinearAlgebra.c
 
-%CC% -c %FLAGS% -o Solid.o Project\Solid\Solid.c
+%CC% -c %FLAGS% -o Solid.o Project\Renderer\Solid.c
 
 %CC% -c %FLAGS% -o main.o Project\main.c
 %CC% -o Project\main Image.o LinearAlgebra.o Solid.o main.o -lm

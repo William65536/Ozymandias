@@ -8,9 +8,7 @@ typedef struct Vec3 { double x, y, z; } Vec3;
 typedef struct Dim3 { double width, height, depth; } Dim3;
 typedef struct Rot3 { double alpha, beta, gamma; } Rot3;
 
-typedef struct Ray {
-    Vec3 pos, dpos;
-} Ray;
+typedef struct Ray { Vec3 pos, dpos; } Ray;
 
 void Mat4_invert(Mat4 self);
 

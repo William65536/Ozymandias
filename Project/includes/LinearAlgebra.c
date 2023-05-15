@@ -9,7 +9,7 @@ void Mat4_invert(Mat4 self)
 {
     assert(self != NULL);
 
-    /* CITE: Inversion formula taken from Wolfram Alpha */
+    /** CITE: Inversion formula taken from Wolfram Alpha */
 
     const double denom =
         self[0][0] *
@@ -83,7 +83,7 @@ Vec3 Mat4_mult_Raytip(const Mat4 self, Vec3 raytip)
     };
 }
 
-/* TODO: Maybe `ray` should be modified to prevent needless copying */
+/** TODO: Maybe `ray` should be modified to prevent needless copying */
 Ray Mat4_mult_Ray(const Mat4 self, Ray ray)
 {
     assert(self != NULL);
@@ -94,7 +94,7 @@ Ray Mat4_mult_Ray(const Mat4 self, Ray ray)
     };
 }
 
-/* TODO: Add reflections and shearing and the like */
+/** TODO: Add reflections and shearing and the like */
 void Mat4_make_transformation(Mat4 self, Vec3 pos, Dim3 dim, Rot3 rot)
 {
     assert(self != NULL);
@@ -130,7 +130,7 @@ double Vec3_dot(Vec3 self, Vec3 vec)
     return self.x * vec.x + self.y * vec.y + self.z * vec.z;
 }
 
-/* NOTE: For debugging purposes */
+/** NOTE: For debugging purposes */
 void Mat4_println(const Mat4 self)
 {
     assert(self != NULL);
@@ -143,13 +143,13 @@ void Mat4_println(const Mat4 self)
     puts("");
 }
 
-/* NOTE: For debugging purposes */
+/** NOTE: For debugging purposes */
 void Ray_println(Ray self)
 {
     printf("[ <%g %g %g> <%g %g %g> ]\n", self.pos.x, self.pos.y, self.pos.z, self.dpos.x, self.dpos.y, self.dpos.z);
 }
 
-/* NOTE: For debugging purposes */
+/** NOTE: For debugging purposes */
 void Vec3_println(Vec3 self)
 {
     printf("<%g %g %g>\n", self.x, self.y, self.z);
