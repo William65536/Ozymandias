@@ -10,6 +10,8 @@ typedef struct Rot3 { double alpha, beta, gamma; } Rot3;
 
 typedef struct Ray { Vec3 pos, dpos; } Ray;
 
+typedef struct Range { double near, far; /** NOTE: near <= far */ } Range;
+
 void Mat4_invert(Mat4 self);
 
 Vec3 Mat4_mult_Vec3(const Mat4 self, Vec3 vec);

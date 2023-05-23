@@ -107,6 +107,4 @@ void Scene_delete(Scene **self)
     *self = NULL;
 }
 
-
-
 #undef T

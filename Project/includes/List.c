@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <stdbool.h>
 #include "List.h"
+#include "ListPreamble.h"
 
 #define concat(a, b) a##b
 #define tricat(a, b, c) a##b##c
@@ -95,9 +96,3 @@ bool funcname(typename(T), push)(typename(T) **self, T value)
 
     return true;
 }
-
-#undef concat
-#undef tricat
-#undef typename
-#undef funcname
-#undef T

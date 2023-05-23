@@ -28,4 +28,4 @@ bool funcname(typename(T), push)(typename(T) **self, T value);
 #undef typename
 #undef tricat
 #undef funcname
-// #undef T
+#undef T

@@ -8,16 +8,10 @@
 #include "..\includes\LinearAlgebra.h"
 #include "Solid.h"
 
-typedef struct Range {
-    double near, far; /** NOTE: low <= high */
-} Range;
-
 typedef struct Luminosity {
-    Range range; /** TODO: Make this accommodate tori when they're added */
+    Range range;
     double angle;
 } Luminosity;
-
-/** TODO: Maybe use a LISP-like language internally or use a pseudo symbolic algebra range system to replace the current object-oriented system */
 
 struct Solid {
     union {
@@ -85,11 +79,11 @@ static Luminosity Ellipsoid_luminosity(const Solid *this, Ray ray)
         return (Luminosity) { .range = { .near = INFINITY } };
 
     const Range range = {
-        .near = (-b - sqrt(b * b - 4.0 * a * c)) / (2.0 * a), /** TODO: Ensure that this is necessarily the closer of the roots, I think it is */
+        .near = (-b - sqrt(b * b - 4.0 * a * c)) / (2.0 * a),
         .far = (-b + sqrt(b * b - 4.0 * a * c)) / (2.0 * a)
     };
 
-    /** TODO: Find further restrictions --- reimplement the ones you've already made */
+    /** TODO: Find further restrictions---reimplement the ones you've already made */
 
     const struct { Vec3 near; Vec3 far; } intersectionpoints = {
         .near = {
