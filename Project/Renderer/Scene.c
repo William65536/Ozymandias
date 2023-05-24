@@ -20,7 +20,7 @@ struct Camera {
 
 /** TODO: Allow for the use of custom allocators */
 
-Camera *Camera_new(Vec3 pos, Dim3 dim, Rot3 rot)
+Camera *Camera_new(Pos3 pos, Dim3 dim, Rot3 rot)
 {
     Camera *ret = malloc(sizeof *ret);
 
@@ -47,7 +47,7 @@ struct Light {
     struct { Mat4 to, from; } scene_transform;
 };
 
-Light *Light_new(Vec3 pos, Dim3 dim, Rot3 rot)
+Light *Light_new(Pos3 pos, Dim3 dim, Rot3 rot)
 {
     Light *ret = malloc(sizeof *ret);
 

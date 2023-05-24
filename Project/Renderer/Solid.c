@@ -9,12 +9,19 @@
 #include "..\includes\LinearAlgebra.h"
 #include "Solid.h"
 
-#define T Range
+#define T Interval
 #include "..\includes\List.h"
+
+/** TODO: Allow blocks */
+static void try(bool expr, jmp_buf envbuf, int errorcode)
+{
+    if (!expr)
+        longjmp(envbuf, errorcode);
+}
 
 typedef struct Luminosity {
     Vec3 normal;
-    RangeList **ranges;
+    IntervalList **intervals;
 } Luminosity;
 
 typedef bool LuminosityCalculation(const Solid *self, Ray ray, Luminosity *scratch, Luminosity *left, Luminosity *right, jmp_buf envbuf);
@@ -29,7 +36,7 @@ struct Solid {
 
 /** TODO: Make deletion functions */
 
-static Solid *Solid_primitive_new(Vec3 pos, Dim3 dim, Rot3 rot, LuminosityCalculation *primitive_luminosity)
+static Solid *Solid_primitive_new(Pos3 pos, Dim3 dim, Rot3 rot, LuminosityCalculation *primitive_luminosity)
 {
     assert(primitive_luminosity != NULL);
 
@@ -80,9 +87,10 @@ static bool Ellipsoid_luminosity(const Solid *self, Ray ray, Luminosity *scratch
     assert(self->scene_transform.from != NULL);
     assert(self->scene_transform.to != NULL);
     assert(scratch != NULL);
-    assert(scratch->ranges != NULL && scratch->ranges != NULL);
+    assert(scratch->intervals != NULL && *scratch->intervals != NULL);
+    assert(envbuf != NULL);
 
-    RangeList_clear(*scratch->ranges);
+    IntervalList_clear(*scratch->intervals);
 
     const Ray tray = Mat4_mult_Ray(self->scene_transform.from, ray);
 
@@ -93,38 +101,38 @@ static bool Ellipsoid_luminosity(const Solid *self, Ray ray, Luminosity *scratch
     if (b * b - 4.0 * a * c < 0.0)
         return false;
 
-    const Range range = {
-        .near = (-b - sqrt(b * b - 4.0 * a * c)) / (2.0 * a),
-        .far = (-b + sqrt(b * b - 4.0 * a * c)) / (2.0 * a)
+    const Interval interval = {
+        .left = (-b - sqrt(b * b - 4.0 * a * c)) / (2.0 * a),
+        .right = (-b + sqrt(b * b - 4.0 * a * c)) / (2.0 * a)
     };
 
     /** TODO: Find further restrictions---reimplement the ones you've already made */
 
-    const struct { Vec3 near; Vec3 far; } intersectionpoints = {
-        .near = {
-            .x = tray.pos.x + tray.dpos.x * range.near,
-            .y = tray.pos.y + tray.dpos.y * range.near,
-            .z = tray.pos.z + tray.dpos.z * range.near
+    const struct { Vec3 left; Vec3 right; } intersectionpoints = {
+        .left = {
+            .x = tray.pos.x + tray.dpos.x * interval.left,
+            .y = tray.pos.y + tray.dpos.y * interval.left,
+            .z = tray.pos.z + tray.dpos.z * interval.left
         },
-        .far = {
-            .x = tray.pos.x + tray.dpos.x * range.far,
-            .y = tray.pos.y + tray.dpos.y * range.far,
-            .z = tray.pos.z + tray.dpos.z * range.far
+        .right = {
+            .x = tray.pos.x + tray.dpos.x * interval.right,
+            .y = tray.pos.y + tray.dpos.y * interval.right,
+            .z = tray.pos.z + tray.dpos.z * interval.right
         }
     };
 
-    const Vec3 normal = intersectionpoints.near;
+    const Vec3 normal = intersectionpoints.left;
 
     const Vec3 tnormal = Mat4_mult_Raytip(self->scene_transform.to, normal);
 
-    const Range trange = {
-        .near = Vec3_mag(Mat4_mult_Vec3(self->scene_transform.to, intersectionpoints.near)),
-        .far = Vec3_mag(Mat4_mult_Vec3(self->scene_transform.to, intersectionpoints.far))
+    const Interval tinterval = {
+        .left = Vec3_mag(Mat4_mult_Vec3(self->scene_transform.to, intersectionpoints.left)),
+        .right = Vec3_mag(Mat4_mult_Vec3(self->scene_transform.to, intersectionpoints.right))
     };
 
     scratch->normal = tnormal;
 
-    if (!RangeList_push(scratch->ranges, trange))
+    if (!IntervalList_push(scratch->intervals, tinterval))
         longjmp(envbuf, 1);
 
     return true;
@@ -444,7 +452,7 @@ Luminosity Solid_difference_luminosity(const Solid *self, Ray ray)
 }
 #endif
 
-Ellipsoid *Ellipsoid_new(Vec3 pos, Dim3 dim, Rot3 rot)
+Ellipsoid *Ellipsoid_new(Pos3 pos, Dim3 dim, Rot3 rot)
 {
     return Solid_primitive_new(pos, dim, rot, Ellipsoid_luminosity);
 }
@@ -475,26 +483,37 @@ bool Solid_render(const Solid *self, Image *image, Color backgroundcolor)
     jmp_buf envbuf;
 
     Luminosity luminosities[3];
-    RangeList *rangelists[3];
+    IntervalList *interval_lists[3];
 
     {
-        rangelists[0] = RangeList_new(10);
-        luminosities[0] = (Luminosity) { .ranges = &rangelists[0] };
+        {
+            interval_lists[0] = IntervalList_new(10);
 
-        if (luminosities[0].ranges == NULL)
-            goto failure;
+            if (interval_lists[0] == NULL)
+                goto failure;
 
-        rangelists[1] = RangeList_new(10);
-        luminosities[1] = (Luminosity) { .ranges = &rangelists[1] };
+            luminosities[0] = (Luminosity) { .intervals = &interval_lists[0] };
+        }
 
-        if (luminosities[1].ranges == NULL)
-            goto delete_scratch;
+        {
+            interval_lists[1] = IntervalList_new(10);
 
-        rangelists[2] = RangeList_new(10);
-        luminosities[2] = (Luminosity) { .ranges = &rangelists[2] };
+            if (interval_lists[1] == NULL)
+                goto delete_scratch;
 
-        if (luminosities[2].ranges == NULL)
-            goto delete_left;
+            luminosities[1] = (Luminosity) { .intervals = &interval_lists[1] };
+
+        }
+
+        {
+
+            interval_lists[2] = IntervalList_new(10);
+
+            if (interval_lists[2] == NULL)
+                goto delete_left;
+
+            luminosities[2] = (Luminosity) { .intervals = &interval_lists[2] };
+        }
     }
 
     for (uint32_t x = 0; x < Image_width(image); x++) {
@@ -521,21 +540,134 @@ bool Solid_render(const Solid *self, Image *image, Color backgroundcolor)
         }
     }
 
-    RangeList_delete(luminosities[2].ranges);
-    RangeList_delete(luminosities[1].ranges);
-    RangeList_delete(luminosities[0].ranges);
+    IntervalList_delete(luminosities[2].intervals);
+    IntervalList_delete(luminosities[1].intervals);
+    IntervalList_delete(luminosities[0].intervals);
 
     return true;
 
     delete_right:
-    RangeList_delete(luminosities[2].ranges);
+    IntervalList_delete(luminosities[2].intervals);
 
     delete_left:
-    RangeList_delete(luminosities[1].ranges);
+    IntervalList_delete(luminosities[1].intervals);
 
     delete_scratch:
-    RangeList_delete(luminosities[0].ranges);
+    IntervalList_delete(luminosities[0].intervals);
 
     failure:
     return false;
+}
+
+size_t Interval_union(Interval a, Interval b, IntervalList **intervals, jmp_buf envbuf)
+{
+    assert(a.left <= a.right);
+    assert(b.left <= b.right);
+    assert(intervals != NULL && *intervals != NULL);
+    assert(envbuf != NULL);
+
+    if (a.left <= b.left && b.right <= a.right) {
+        try(IntervalList_push(intervals, a), envbuf, 1);
+        return 1;
+    }
+
+    if (b.left <= a.left && a.right <= b.right) {
+        try(IntervalList_push(intervals, b), envbuf, 1);
+        return 1;
+    }
+
+    if (b.left <= a.right) {
+        try(IntervalList_push(intervals, (Interval) { .left = a.left, .right = b.right }), envbuf, 1);
+        return 1;
+    }
+
+    if (a.left <= b.right) {
+        try(IntervalList_push(intervals, (Interval) { .left = b.left, .right = a.right }), envbuf, 1);
+        return 1;
+    }
+
+    if (a.right < b.left) {
+        try(IntervalList_push(intervals, a), envbuf, 1);
+        try(IntervalList_push(intervals, b), envbuf, 1);
+        return 2;
+    }
+
+    try(IntervalList_push(intervals, b), envbuf, 1);
+    try(IntervalList_push(intervals, a), envbuf, 1);
+
+    return 2;
+}
+
+size_t Interval_intersection(Interval a, Interval b, IntervalList **intervals, jmp_buf envbuf)
+{
+    assert(a.left <= a.right);
+    assert(b.left <= b.right);
+    assert(intervals != NULL && *intervals != NULL);
+    assert(envbuf != NULL);
+
+    if (a.left <= b.left && b.right <= a.right) {
+        try(IntervalList_push(intervals, a), envbuf, 1);
+        return 1;
+    }
+
+    if (b.left <= a.left && a.right <= b.right) {
+        try(IntervalList_push(intervals, b), envbuf, 1);
+        return 1;
+    }
+
+    if (b.left <= a.right) {
+        try(IntervalList_push(intervals, (Interval) { .left = b.left, .right = a.right }), envbuf, 1);
+        return 1;
+    }
+
+    if (a.left <= b.right) {
+        try(IntervalList_push(intervals, (Interval) { .left = a.left, .right = b.right }), envbuf, 1);
+        return 1;
+    }
+
+    return 0;
+}
+
+size_t Interval_difference(Interval a, Interval b, IntervalList **intervals, jmp_buf envbuf)
+{
+    assert(a.left <= a.right);
+    assert(b.left <= b.right);
+    assert(intervals != NULL && *intervals != NULL);
+    assert(envbuf != NULL);
+
+    if (a.left <= b.left && b.right <= a.right) {
+        if (b.left == b.right) {
+            try(IntervalList_push(intervals, a), envbuf, 1);
+            return 1;
+        }
+
+        try(IntervalList_push(intervals, (Interval) { .left = a.left, .right = b.left }), envbuf, 1);
+        try(IntervalList_push(intervals, (Interval) { .left = b.right, .right = a.right }), envbuf, 1);
+
+        return 2;
+    }
+
+    if (b.left <= a.left && a.right <= b.right) {
+        if (a.left == a.right) {
+            try(IntervalList_push(intervals, b), envbuf, 1);
+            return 1;
+        }
+
+        try(IntervalList_push(intervals, (Interval) { .left = b.left, .right = a.left }), envbuf, 1);
+        try(IntervalList_push(intervals, (Interval) { .left = a.right, .right = b.right }), envbuf, 1);
+
+        return 2;
+    }
+
+    if (b.left <= a.right) {
+        
+
+    }
+
+    if (a.left <= b.right) {
+
+
+    }
+
+    return 0;
 }

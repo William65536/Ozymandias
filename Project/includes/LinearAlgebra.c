@@ -95,7 +95,7 @@ Ray Mat4_mult_Ray(const Mat4 self, Ray ray)
 }
 
 /** TODO: Add reflections and shearing and the like */
-void Mat4_make_transformation(Mat4 self, Vec3 pos, Dim3 dim, Rot3 rot)
+void Mat4_make_transformation(Mat4 self, Pos3 pos, Dim3 dim, Rot3 rot)
 {
     assert(self != NULL);
 
