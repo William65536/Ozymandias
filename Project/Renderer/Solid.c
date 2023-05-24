@@ -14,7 +14,7 @@
 
 typedef struct Luminosity {
     Vec3 normal;
-    RangeList *ranges;
+    RangeList **ranges;
 } Luminosity;
 
 typedef bool LuminosityCalculation(const Solid *self, Ray ray, Luminosity *scratch, Luminosity *left, Luminosity *right, jmp_buf envbuf);
@@ -80,9 +80,9 @@ static bool Ellipsoid_luminosity(const Solid *self, Ray ray, Luminosity *scratch
     assert(self->scene_transform.from != NULL);
     assert(self->scene_transform.to != NULL);
     assert(scratch != NULL);
-    assert(scratch->ranges != NULL);
+    assert(scratch->ranges != NULL && scratch->ranges != NULL);
 
-    RangeList_clear(scratch->ranges);
+    RangeList_clear(*scratch->ranges);
 
     const Ray tray = Mat4_mult_Ray(self->scene_transform.from, ray);
 
@@ -117,8 +117,6 @@ static bool Ellipsoid_luminosity(const Solid *self, Ray ray, Luminosity *scratch
 
     const Vec3 tnormal = Mat4_mult_Raytip(self->scene_transform.to, normal);
 
-    // const double angle = acos(Vec3_dot(ray.dpos, tnormal) / (Vec3_mag(ray.dpos) * Vec3_mag(tnormal)));
-
     const Range trange = {
         .near = Vec3_mag(Mat4_mult_Vec3(self->scene_transform.to, intersectionpoints.near)),
         .far = Vec3_mag(Mat4_mult_Vec3(self->scene_transform.to, intersectionpoints.far))
@@ -126,10 +124,9 @@ static bool Ellipsoid_luminosity(const Solid *self, Ray ray, Luminosity *scratch
 
     scratch->normal = tnormal;
 
-    if (!RangeList_push(&scratch->ranges, trange))
+    if (!RangeList_push(scratch->ranges, trange))
         longjmp(envbuf, 1);
 
-    // return (Luminosity) { .angle = angle / M_PI, .range = trange };
     return true;
 }
 
@@ -477,20 +474,26 @@ bool Solid_render(const Solid *self, Image *image, Color backgroundcolor)
 
     jmp_buf envbuf;
 
-    Luminosity scratch, left, right; {
-        scratch = (Luminosity) { .ranges = RangeList_new(10) };
+    Luminosity luminosities[3];
+    RangeList *rangelists[3];
 
-        if (scratch.ranges == NULL)
+    {
+        rangelists[0] = RangeList_new(10);
+        luminosities[0] = (Luminosity) { .ranges = &rangelists[0] };
+
+        if (luminosities[0].ranges == NULL)
             goto failure;
 
-        left = (Luminosity) { .ranges = RangeList_new(10) };
+        rangelists[1] = RangeList_new(10);
+        luminosities[1] = (Luminosity) { .ranges = &rangelists[1] };
 
-        if (left.ranges == NULL)
+        if (luminosities[1].ranges == NULL)
             goto delete_scratch;
 
-        right = (Luminosity) { .ranges = RangeList_new(10) };
+        rangelists[2] = RangeList_new(10);
+        luminosities[2] = (Luminosity) { .ranges = &rangelists[2] };
 
-        if (right.ranges == NULL)
+        if (luminosities[2].ranges == NULL)
             goto delete_left;
     }
 
@@ -504,8 +507,8 @@ bool Solid_render(const Solid *self, Image *image, Color backgroundcolor)
             if (setjmp(envbuf) != 0)
                 goto delete_right;
 
-            if (self->calculate_luminosity(self, ray, &scratch, &left, &right, envbuf)) {
-                const double angle = acos(Vec3_dot(ray.dpos, scratch.normal) / (Vec3_mag(ray.dpos) * Vec3_mag(scratch.normal)));
+            if (self->calculate_luminosity(self, ray, &luminosities[0], &luminosities[1], &luminosities[2], envbuf)) {
+                const double angle = acos(Vec3_dot(ray.dpos, luminosities[0].normal) / (Vec3_mag(ray.dpos) * Vec3_mag(luminosities[0].normal)));
 
                 const Color color = {
                     .r = ((angle / M_PI - 0.5) * 2.0 + 2.0) * backgroundcolor.r / 3.0,
@@ -518,20 +521,20 @@ bool Solid_render(const Solid *self, Image *image, Color backgroundcolor)
         }
     }
 
-    RangeList_delete(&right.ranges);
-    RangeList_delete(&left.ranges);
-    RangeList_delete(&scratch.ranges);
+    RangeList_delete(luminosities[2].ranges);
+    RangeList_delete(luminosities[1].ranges);
+    RangeList_delete(luminosities[0].ranges);
 
     return true;
 
     delete_right:
-    RangeList_delete(&right.ranges);
+    RangeList_delete(luminosities[2].ranges);
 
     delete_left:
-    RangeList_delete(&left.ranges);
+    RangeList_delete(luminosities[1].ranges);
 
     delete_scratch:
-    RangeList_delete(&scratch.ranges);
+    RangeList_delete(luminosities[0].ranges);
 
     failure:
     return false;
