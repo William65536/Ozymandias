@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <stdbool.h>
-#include "List.h"
 #include "ListPreamble.h"
 
 #define concat(a, b) a##b
@@ -11,10 +10,10 @@
 
 /** TODO: Allow for the use of custom allocators */
 
-struct typename(T) {
+typedef struct typename(T) {
     size_t size, cap;
     T data[];
-};
+} typename(T);
 
 typename(T) *funcname(typename(T), new)(size_t initcap)
 {
@@ -95,4 +94,11 @@ bool funcname(typename(T), push)(typename(T) **self, T value)
     (*self)->size++;
 
     return true;
+}
+
+void funcname(typename(T), clear)(typename(T) *self)
+{
+    assert(self != NULL);
+
+    self->size = 0;
 }

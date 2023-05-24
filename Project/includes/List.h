@@ -24,6 +24,8 @@ T funcname(typename(T), get)(const typename(T) *self, size_t i);
 
 bool funcname(typename(T), push)(typename(T) **self, T value);
 
+void funcname(typename(T), clear)(typename(T) *self);
+
 #undef concat
 #undef typename
 #undef tricat

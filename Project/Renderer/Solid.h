@@ -1,6 +1,7 @@
 #ifndef SOLID_H
 #define SOLID_H
 
+#include <stdbool.h>
 #include "..\includes\LinearAlgebra.h"
 #include "..\includes\Image.h"
 
@@ -14,10 +15,10 @@ Ellipsoid *Ellipsoid_new(Vec3 pos, Dim3 dim, Rot3 rot);
 // Cone *Cone_new(Vec3 pos, Dim3 dim, Rot3 rot);
 // Torus *Torus_new(Vec3 pos, Dim3 dim, Rot3 rot);
 
-Union *Union_new(Solid *left, Solid *right);
+// Union *Union_new(Solid *left, Solid *right);
 // Intersection *Intersection_new(const Solid *left, const Solid *right);
 // Difference *Difference_new(const Solid *left, const Solid *right);
 
-void Solid_render(const Solid *this, Image *image, Color backgroundcolor);
+bool Solid_render(const Solid *self, Image *image, Color backgroundcolor);
 
 #endif
