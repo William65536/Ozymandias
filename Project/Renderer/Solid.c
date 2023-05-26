@@ -24,6 +24,7 @@ typedef struct Luminosity {
     IntervalList **intervals;
 } Luminosity;
 
+/** TODO: Make this take in an array of length 3 */
 typedef bool LuminosityCalculation(const Solid *self, Ray ray, Luminosity *scratch, Luminosity *left, Luminosity *right, jmp_buf envbuf);
 
 struct Solid {
@@ -387,28 +388,86 @@ Luminosity Solid_cone_luminosity(const Solid *self, Ray ray)
 #endif
 
 /** TODO: Allow for whole tranformations on composite structures */
-// static Luminosity Union_luminosity(const Solid *self, Ray ray, Luminosity *scratch, Luminosity *left, Luminosity *right, jmp_buf envbuf)
-// {
-//     assert(self != NULL);
-//     assert(self->left != NULL);
-//     assert(self->right != NULL);
-//     assert(self->left->luminosity != NULL);
-//     assert(self->right->luminosity != NULL);
+static bool Union_luminosity(const Solid *self, Ray ray, Luminosity *scratch, Luminosity *left, Luminosity *right, jmp_buf envbuf)
+{
+    assert(self != NULL);
+    assert(self->left != NULL);
+    assert(self->right != NULL);
+    assert(self->left->calculate_luminosity != NULL);
+    assert(self->right->calculate_luminosity != NULL);
+    assert(scratch != NULL);
+    assert(scratch->intervals != NULL && *scratch->intervals != NULL);
+    assert(left != NULL);
+    assert(left->intervals != NULL && *left->intervals != NULL);
+    assert(right != NULL);
+    assert(right->intervals != NULL && *right->intervals != NULL);
 
-//     const Luminosity leftluminosity = self->left->luminosity(self->left, ray);
-//     const Luminosity rightluminosity = self->right->luminosity(self->right, ray);
+    IntervalList_clear(*scratch->intervals);
 
-//     if (isinf(leftluminosity.range.near))
-//         return rightluminosity;
+    const bool isleft = self->left->calculate_luminosity(self->left, ray, left, NULL, NULL, envbuf);
+    const bool isright = self->right->calculate_luminosity(self->right, ray, right, NULL, NULL, envbuf);
 
-//     if (isinf(rightluminosity.range.near))
-//         return leftluminosity;
+    if (!isleft && !isright)
+        return false;
 
-//     const double near = fmin(leftluminosity.range.near, rightluminosity.range.near);
-//     const double far = fmax(leftluminosity.range.far, rightluminosity.range.far);
+    /** TODO: Implement these as a pointer exchanges later on */
+    if (!isleft) {
+        try(IntervalList_copy(*right->intervals, scratch->intervals), envbuf, 1);
+        return true;
+    }
 
-//     return (Luminosity) { .range = { .near = near, .far = far }, .angle = near == leftluminosity.range.near ? leftluminosity.angle : rightluminosity.angle };
-// }
+    if (!isright) {
+        try(IntervalList_copy(*left->intervals, scratch->intervals), envbuf, 1);
+        return true;
+    }
+
+    assert(IntervalList_size(*left->intervals) > 0);
+    assert(IntervalList_size(*right->intervals) > 0);
+
+    typedef struct { const Interval *itr, *end; } IntervalListView;
+
+    const IntervalListView leftview = {
+        .itr = IntervalList_begin(*left->intervals),
+        .end = IntervalList_end(*left->intervals)
+    };
+
+    const IntervalListView rightview = {
+        .itr = IntervalList_begin(*right->intervals),
+        .end = IntervalList_end(*right->intervals)
+    };
+
+    IntervalListView views[2];
+
+    if (leftview.itr->left < rightview.itr->right) {
+        views[0] = (IntervalListView) { .itr = leftview.itr, .end = leftview.end };
+        views[1] = (IntervalListView) { .itr = rightview.itr, .end = rightview.end };
+    } else {
+        views[0] = (IntervalListView) { .itr = rightview.itr, .end = rightview.end };
+        views[1] = (IntervalListView) { .itr = leftview.itr, .end = leftview.end };
+    }
+
+
+    while (true) {
+        Interval temp;
+
+        temp.left = views[0].itr->left;
+
+        for (; views[1].itr < views[1].end; views[1].itr++) {
+            if (views[1].itr->left > views[0].itr->right) {
+                temp.right = views[0].itr->right;
+
+                IntervalListView tempview = views[0];
+                views[0] = views[1];
+                views[1] = tempview;
+                break;
+            }
+
+            if (views[1].itr->right > views[0].)
+        }
+    }
+
+    return true;
+}
 
 #if 0
 Luminosity Solid_intersection_luminosity(const Solid *self, Ray ray)
@@ -660,13 +719,13 @@ size_t Interval_difference(Interval a, Interval b, IntervalList **intervals, jmp
     }
 
     if (b.left <= a.right) {
-        
-
+        try(IntervalList_push(intervals, (Interval) { .left = a.left, .right = b.left }), envbuf, 1);
+        return 1;
     }
 
     if (a.left <= b.right) {
-
-
+        try(IntervalList_push(intervals, (Interval) { .left = b.left, .right = a.left }), envbuf, 1);
+        return 1;
     }
 
     return 0;

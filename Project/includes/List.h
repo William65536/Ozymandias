@@ -26,6 +26,8 @@ bool funcname(typename(T), push)(typename(T) **self, T value);
 
 void funcname(typename(T), clear)(typename(T) *self);
 
+bool funcname(typename(T), copy)(const typename(T) *restrict self, typename(T) *restrict *copyee);
+
 #undef concat
 #undef typename
 #undef tricat

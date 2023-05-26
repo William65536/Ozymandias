@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 #include <stdbool.h>
 #include "ListPreamble.h"
@@ -12,7 +13,7 @@
 
 typedef struct typename(T) {
     size_t size, cap;
-    T data[];
+    T data[]; /** TODO: Make this a pointer */
 } typename(T);
 
 typename(T) *funcname(typename(T), new)(size_t initcap)
@@ -67,27 +68,44 @@ const T *funcname(typename(T), end)(const typename(T) *self)
     return self->data + self->size;
 }
 
-bool funcname(typename(T), resize)(typename(T) **self) 
+static bool funcname(typename(T), resize)(typename(T) **self, size_t size)
 {
     assert(self != NULL && *self != NULL);
+    assert((*self)->cap > 0);
 
-    typename(T) *temp = realloc(*self, sizeof **self + (*self)->cap * sizeof *(*self)->data * 2);
+    /** TODO: Make the resizing operation better */
+    typename(T) *const temp = realloc(*self, sizeof **self + (2 * (*self)->cap + size) * sizeof *(*self)->data);
 
     if (temp == NULL)
         return false;
 
     *self = temp;
-    (*self)->cap *= 2;
+    (*self)->cap = 2 * (*self)->cap + size;
 
     return true;
 }
+
+// bool funcname(typename(T), resize)(typename(T) **self) 
+// {
+//     assert(self != NULL && *self != NULL);
+
+//     typename(T) *temp = realloc(*self, sizeof **self + (*self)->cap * sizeof *(*self)->data * 2);
+
+//     if (temp == NULL)
+//         return false;
+
+//     *self = temp;
+//     (*self)->cap *= 2;
+
+//     return true;
+// }
 
 bool funcname(typename(T), push)(typename(T) **self, T value)
 {
     assert(self != NULL && *self != NULL);
 
     if ((*self)->size + 1 > (*self)->cap)
-        if (!funcname(typename(T), resize)(self))
+        if (!funcname(typename(T), resize)(self, 1))
             return false;
 
     (*self)->data[(*self)->size] = value;
@@ -101,4 +119,21 @@ void funcname(typename(T), clear)(typename(T) *self)
     assert(self != NULL);
 
     self->size = 0;
+}
+
+bool funcname(typename(T), copy)(const typename(T) *self, typename(T) **copyee)
+{
+    assert(self != NULL);
+    assert(copyee != NULL && *copyee != NULL);
+    /** TODO: Assert that these are, indeed, different */
+
+    if ((*copyee)->cap < self->cap)
+        if (!funcname(typename(T), resize)(copyee, self->cap - (*copyee)->cap))
+            return false;
+
+    (*copyee)->size = self->size;
+
+    memcpy((*copyee)->data, self->data, (*copyee)->size * sizeof *(*copyee)->data);
+
+    return true;
 }

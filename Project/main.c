@@ -19,7 +19,7 @@ int main(void)
         Image_clear(image, backgroundcolor);
 
         const Ellipsoid *const solid = Ellipsoid_new(
-            (Pos3) { .x = 500.0, .y = 0.0, .z = 1000.0 },
+            (Pos3) { .x = 0.0, .y = 0.0, .z = 1000.0 },
             (Dim3) { .width = 100.0, .height = 100.0, .depth = 100.0 },
             (Rot3) { .alpha = 0.0, .beta = M_PI_2, .gamma = 0.0 });
 
